@@ -5,8 +5,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/harmony-one/harmony/internal/utils"
 	"log"
-	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +20,7 @@ type prefetchJob struct {
 
 // Prefetch If redis is empty, the hit rate will be too low and the synchronization block speed will be slow
 // this function will parallel load the latest block statedb to redis
+// this function used by debug or first time to init tikv cluster
 func (s *DB) Prefetch(parallel int) {
 	wg := sync.WaitGroup{}
 
@@ -120,40 +121,6 @@ func (s *DB) prefetchWorker(job *prefetchJob, jobs chan *prefetchJob) {
 	}
 }
 
-// bytesMiddle get the binary middle value of a and b
-func (s *DB) bytesMiddle(a, b []byte) []byte {
-	if a == nil && b == nil {
-		return []byte{128}
-	}
-
-	if len(a) > len(b) {
-		tmp := make([]byte, len(a))
-		if b == nil {
-			for i, _ := range tmp {
-				tmp[i] = 255
-			}
-		}
-		copy(tmp, b)
-		b = tmp
-	} else if len(a) < len(b) {
-		tmp := make([]byte, len(b))
-		if a == nil {
-			for i, _ := range tmp {
-				tmp[i] = 0
-			}
-		}
-		copy(tmp, a)
-		a = tmp
-	}
-
-	aI := big.NewInt(0).SetBytes(a)
-	bI := big.NewInt(0).SetBytes(b)
-
-	aI.Add(aI, bI)
-	aI.Div(aI, big.NewInt(2))
-	return aI.Bytes()
-}
-
 // prefetchAccountStorage used for fetch account storage
 func (s *DB) prefetchAccountStorage(jobs chan *prefetchJob, job *prefetchJob, it *trie.Iterator) {
 	start := time.Now()
@@ -168,7 +135,7 @@ func (s *DB) prefetchAccountStorage(jobs chan *prefetchJob, job *prefetchJob, it
 
 		// if fetch one account job used more than 15s, then split the job
 		if count%10000 == 0 && time.Now().Sub(start) > 15*time.Second {
-			middle := s.bytesMiddle(it.Key, job.end)
+			middle := utils.BytesMiddle(it.Key, job.end)
 			startJob := &prefetchJob{
 				accountAddr: job.accountAddr,
 				account:     job.account,

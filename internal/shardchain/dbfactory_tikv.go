@@ -3,6 +3,7 @@ package shardchain
 import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/harmony-one/harmony/internal/tikv"
 	tikvCommon "github.com/harmony-one/harmony/internal/tikv/common"
 	"github.com/harmony-one/harmony/internal/tikv/prefix"
 	"github.com/harmony-one/harmony/internal/tikv/remote"
@@ -40,7 +41,7 @@ func (f *TiKvFactory) getRemoteDB(shardID uint32) (*prefix.PrefixDatabase, error
 		return db.(*prefix.PrefixDatabase), nil
 	} else {
 		prefixStr := []byte(fmt.Sprintf("%s_%d/", LDBTiKVPrefix, shardID))
-		remoteDatabase, err := remote.NewRemoteDatabase(f.PDAddr, f.Role == "Reader")
+		remoteDatabase, err := remote.NewRemoteDatabase(f.PDAddr, f.Role == tikv.RoleReader)
 		if err != nil {
 			return nil, err
 		}
@@ -66,7 +67,7 @@ func (f *TiKvFactory) getStateDB(shardID uint32) (*statedb_cache.StateDBCacheDat
 			return nil, err
 		}
 
-		tmpDB, err := statedb_cache.NewStateDBCacheDatabase(db, f.CacheConfig, f.Role == "Reader")
+		tmpDB, err := statedb_cache.NewStateDBCacheDatabase(db, f.CacheConfig, f.Role == tikv.RoleReader)
 		if err != nil {
 			return nil, err
 		}

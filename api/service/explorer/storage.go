@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/RoaringBitmap/roaring/roaring64"
 	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
+	"github.com/harmony-one/harmony/internal/tikv"
 	"os"
 	"sync"
 	"time"
@@ -24,7 +25,8 @@ import (
 )
 
 const (
-	numWorker = 8
+	numWorker        = 8
+	changedSaveCount = 100
 )
 
 // ErrExplorerNotReady is the error when querying explorer db data when
@@ -58,22 +60,22 @@ type (
 	}
 )
 
-func newStorage(hc *harmonyconfig.HarmonyConfig, bc *core2.BlockChain, dbPath string) (*storage, error) {
-	var db database
-	var err error
-
-	if hc.General.UseTiKV {
+func newExplorerDB(hc *harmonyconfig.HarmonyConfig, dbPath string) (database, error) {
+	if hc.General.RunElasticMode {
 		// init the storage using tikv
 		dbPath = fmt.Sprintf("explorer_tikv_%d", hc.General.ShardID)
-		readOnly := hc.TiKV.Role == "Reader"
+		readOnly := hc.TiKV.Role == tikv.RoleReader
 		utils.Logger().Info().Msg("explorer storage in tikv: " + dbPath)
-		db, err = newExplorerTiKv(hc.TiKV.PDAddr, dbPath, readOnly)
+		return newExplorerTiKv(hc.TiKV.PDAddr, dbPath, readOnly)
 	} else {
 		// or leveldb
 		utils.Logger().Info().Msg("explorer storage folder: " + dbPath)
-		db, err = newExplorerLvlDB(dbPath)
+		return newExplorerLvlDB(dbPath)
 	}
+}
 
+func newStorage(hc *harmonyconfig.HarmonyConfig, bc *core2.BlockChain, dbPath string) (*storage, error) {
+	db, err := newExplorerDB(hc, dbPath)
 	if err != nil {
 		utils.Logger().Error().Err(err).Msg("Failed to create new explorer database")
 		return nil, err
@@ -275,7 +277,7 @@ func (tm *taskManager) PullTask() *types.Block {
 	return nil
 }
 
-// markBlockDone mark block processed done
+// markBlockDone mark block processed done when explorer computed one block
 func (tm *taskManager) markBlockDone(btc batch, blockNum uint64) {
 	tm.lock.Lock()
 	defer tm.lock.Unlock()
@@ -284,7 +286,7 @@ func (tm *taskManager) markBlockDone(btc batch, blockNum uint64) {
 		tm.rbChangedCount++
 
 		// every 100 change write once
-		if tm.rbChangedCount == 100 {
+		if tm.rbChangedCount == changedSaveCount {
 			tm.rbChangedCount = 0
 			_ = writeCheckpointBitmap(btc, tm.rb)
 		}

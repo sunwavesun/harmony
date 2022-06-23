@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"github.com/harmony-one/harmony/internal/tikv"
 	"math/rand"
 	"net"
 	"strconv"
@@ -220,7 +221,7 @@ func (node *Node) doBeaconSyncing() {
 		return
 	}
 
-	if node.HarmonyConfig.General.UseTiKV {
+	if node.HarmonyConfig.General.RunElasticMode {
 		return
 	}
 
@@ -346,13 +347,13 @@ func (node *Node) StartGRPCSyncClient() {
 
 // NodeSyncing makes sure to start all the processes needed to sync the node based on different configuration factors.
 func (node *Node) NodeSyncing() {
-	if node.HarmonyConfig.General.UseTiKV {
+	if node.HarmonyConfig.General.RunElasticMode {
 		node.syncFromTiKVWriter() // this is for both reader and backup writers
 
-		if node.HarmonyConfig.TiKV.Role == "Reader" {
+		if node.HarmonyConfig.TiKV.Role == tikv.RoleReader {
 			node.Consensus.UpdateConsensusInformation()
 		}
-		if node.HarmonyConfig.TiKV.Role == "Writer" {
+		if node.HarmonyConfig.TiKV.Role == tikv.RoleWriter {
 			node.supportSyncing() // the writer needs to be in sync with it's other peers
 		}
 	} else if !node.HarmonyConfig.General.IsOffline && node.HarmonyConfig.DNSSync.Client {

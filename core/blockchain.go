@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
+	"github.com/harmony-one/harmony/internal/tikv"
 	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
 	"io"
 	"log"
@@ -910,6 +911,10 @@ func (bc *BlockChain) TrieNode(hash common.Hash) ([]byte, error) {
 // Stop stops the blockchain service. If any imports are currently in progress
 // it will abort them using the procInterrupt.
 func (bc *BlockChain) Stop() {
+	if bc == nil {
+		return
+	}
+
 	if !atomic.CompareAndSwapInt32(&bc.running, 0, 1) {
 		return
 	}
@@ -1384,13 +1389,13 @@ func (bc *BlockChain) GetMaxGarbageCollectedBlockNumber() int64 {
 // After insertion is done, all accumulated events will be fired.
 func (bc *BlockChain) InsertChain(chain types.Blocks, verifyHeaders bool) (int, error) {
 	// if in tikv mode, writer node need preempt master or come be a follower
-	if bc.redisPreempt != nil && !bc.tikvPreemptMaster(bc.rangeBlock(chain)) {
+	if bc.isInitTiKV() && !bc.tikvPreemptMaster(bc.rangeBlock(chain)) {
 		return len(chain), nil
 	}
 
 	n, events, logs, err := bc.insertChain(chain, verifyHeaders)
 	bc.PostChainEvents(events, logs)
-	if bc.redisPreempt != nil && err != nil {
+	if bc.isInitTiKV() && err != nil {
 		// if has some error, master writer node will release the permission
 		_, _ = bc.redisPreempt.Unlock()
 	}
@@ -3235,7 +3240,10 @@ func (bc *BlockChain) SyncFromTiKVWriter(newBlkNum uint64, logs []*types.Log) er
 		for i := currentBlockNum; i <= newBlkNum; i++ {
 			blk := bc.GetBlockByNumber(i)
 			if blk == nil {
-				// todo check later
+				// cluster synchronization may be in progress
+				utils.Logger().Warn().
+					Uint64("currentBlockNum", i).
+					Msg("[tikv sync] sync from writer got block nil, cluster synchronization may be in progress")
 				return nil
 			}
 
@@ -3244,7 +3252,10 @@ func (bc *BlockChain) SyncFromTiKVWriter(newBlkNum uint64, logs []*types.Log) er
 				return err
 			}
 		}
-		log.Printf("sync to %d use %v", currentBlockNum, time.Now().Sub(start))
+		utils.Logger().Info().
+			Uint64("currentBlockNum", currentBlockNum).
+			Dur("usedTime", time.Now().Sub(start)).
+			Msg("[tikv sync] sync from writer")
 	}
 
 	return nil
@@ -3275,14 +3286,22 @@ func (bc *BlockChain) tikvCleanCache() {
 			if err != nil {
 				utils.Logger().Warn().
 					Err(err).
-					Msg("tikv clean cache error")
+					Msg("[tikv clean cache] error")
 				break
 			}
 
-			log.Println("tikvCleanCache block", i, "count", count, "use", time.Now().Sub(start))
+			utils.Logger().Info().
+				Uint64("blockNum", i).
+				Int("removeCacheEntriesCount", count).
+				Dur("usedTime", time.Now().Sub(start)).
+				Msg("[tikv clean cache] success")
 			bc.latestCleanCacheNum = i
 		}
 	}
+}
+
+func (bc *BlockChain) isInitTiKV() bool {
+	return bc.isInitTiKV()
 }
 
 // tikvPreemptMaster used for tikv mode, writer node need preempt master or come be a follower
@@ -3322,14 +3341,25 @@ func (bc *BlockChain) rangeBlock(blocks types.Blocks) (uint64, uint64) {
 
 // RedisPreempt used for tikv mode, get the redis preempt instance
 func (bc *BlockChain) RedisPreempt() *redis_helper.RedisPreempt {
+	if bc == nil {
+		return nil
+	}
 	return bc.redisPreempt
+}
+
+func (bc *BlockChain) IsTikvWriterMaster() bool {
+	if bc == nil || bc.redisPreempt == nil {
+		return false
+	}
+
+	return bc.redisPreempt.LastLockStatus()
 }
 
 // InitTiKV used for tikv mode, init the tikv mode
 func (bc *BlockChain) InitTiKV(conf *harmonyconfig.TiKVConfig) {
 	bc.cleanCacheChan = make(chan uint64, 10)
 
-	if conf.Role == "Writer" {
+	if conf.Role == tikv.RoleWriter {
 		// only writer need preempt permission
 		bc.redisPreempt = redis_helper.CreatePreempt(fmt.Sprintf("shard_%d_preempt", bc.ShardID()))
 	}

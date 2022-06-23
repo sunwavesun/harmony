@@ -1,12 +1,12 @@
+// from https://github.com/xtaci/smux/blob/master/alloc.go
 package byte_alloc
 
 import (
 	"sync"
 )
 
-var (
-	debruijinPos = [...]byte{0, 9, 1, 10, 13, 21, 2, 29, 11, 14, 16, 18, 22, 25, 3, 30, 8, 12, 20, 28, 15, 17, 24, 7, 19, 27, 23, 6, 26, 5, 4, 31}
-)
+// magic number
+var debruijinPos = [...]byte{0, 9, 1, 10, 13, 21, 2, 29, 11, 14, 16, 18, 22, 25, 3, 30, 8, 12, 20, 28, 15, 17, 24, 7, 19, 27, 23, 6, 26, 5, 4, 31}
 
 // Allocator for incoming frames, optimized to prevent overwriting after zeroing
 type Allocator struct {
@@ -60,6 +60,7 @@ func (alloc *Allocator) Put(buf []byte) {
 }
 
 // msb return the pos of most significiant bit
+// Equivalent to: uint(math.Floor(math.Log2(float64(n))))
 // http://supertech.csail.mit.edu/papers/debruijn.pdf
 func msb(size int) byte {
 	v := uint32(size)

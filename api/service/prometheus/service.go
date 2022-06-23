@@ -39,6 +39,10 @@ func (p Config) String() string {
 	return fmt.Sprintf("%v, %v:%v, %v/%v, %v/%v/%v/%v:%v", p.Enabled, p.IP, p.Port, p.EnablePush, p.Gateway, p.Network, p.Legacy, p.NodeType, p.Shard, p.Instance)
 }
 
+func (p Config) IsUsedTiKV() bool {
+	return p.TikvRole != ""
+}
+
 // Service provides Prometheus metrics via the /metrics route. This route will
 // show all the metrics registered with the Prometheus DefaultRegisterer.
 type Service struct {
@@ -65,7 +69,7 @@ var (
 func (s *Service) getJobName() string {
 	var node string
 
-	if s.config.TikvRole != "" { // tikv node must be explorer node, eg: te_reader0, te_writer0
+	if s.config.IsUsedTiKV() { // tikv node must be explorer node, eg: te_reader0, te_writer0
 		node = "te_" + strings.ToLower(s.config.TikvRole)
 	} else if s.config.Legacy { // legacy nodes are harmony nodes: s0,s1,s2,s3
 		node = "s"

@@ -108,17 +108,7 @@ func (sc *CollectionImpl) ShardChain(shardID uint32) (*core.BlockChain, error) {
 		chainConfig.EthCompatibleChainID = big.NewInt(chainConfig.EthCompatibleShard0ChainID.Int64())
 	}
 
-	var stateCache state.Database
-	if sc.harmonyconfig.General.UseTiKV {
-		// used for tikv mode, init state db using tikv storage
-		stateDB, err := tikv_manage.GetDefaultTiKVFactory().NewStateDB(shardID)
-		if err != nil {
-			return nil, err
-		}
-		stateCache = state.NewDatabaseWithCache(stateDB, 64)
-	} else {
-		stateCache = state.NewDatabase(db)
-	}
+	stateCache, err := initStateCache(db, sc, shardID)
 
 	bc, err := core.NewBlockChain(
 		db, stateCache, cacheConfig, &chainConfig, sc.engine, vm.Config{}, nil,
@@ -129,12 +119,25 @@ func (sc *CollectionImpl) ShardChain(shardID uint32) (*core.BlockChain, error) {
 	db = nil // don't close
 	sc.pool[shardID] = bc
 
-	if sc.harmonyconfig.General.UseTiKV {
+	if sc.harmonyconfig.General.RunElasticMode {
 		// init the tikv mode
 		bc.InitTiKV(sc.harmonyconfig.TiKV)
 	}
 
 	return bc, nil
+}
+
+func initStateCache(db ethdb.Database, sc *CollectionImpl, shardID uint32) (state.Database, error) {
+	if sc.harmonyconfig.General.RunElasticMode {
+		// used for tikv mode, init state db using tikv storage
+		stateDB, err := tikv_manage.GetDefaultTiKVFactory().NewStateDB(shardID)
+		if err != nil {
+			return nil, err
+		}
+		return state.NewDatabaseWithCache(stateDB, 64), nil
+	} else {
+		return state.NewDatabase(db), nil
+	}
 }
 
 // DisableCache disables caching mode for newly opened chains.

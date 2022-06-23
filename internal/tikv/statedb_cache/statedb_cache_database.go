@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+const (
+	maxMemoryEntrySize      = 64 * 1024
+	maxPipelineEntriesCount = 10000
+	cacheMinGapInSecond     = 600
+)
+
 type cacheWrapper struct {
 	*fastcache.Cache
 }
@@ -159,7 +165,7 @@ func (c *StateDBCacheDatabase) Get(key []byte) (ret []byte, err error) {
 
 		defer func() {
 			if err == nil {
-				if len(ret) < 64*1024 {
+				if len(ret) < maxMemoryEntrySize {
 					// set data to memory db if loaded from redis cache or leveldb
 					c.l1Cache.Set(key, ret)
 				}
@@ -203,7 +209,7 @@ func (c *StateDBCacheDatabase) Put(key []byte, value []byte) (err error) {
 	if c.enableReadCache {
 		defer func() {
 			if err == nil {
-				if len(value) < 64*1024 {
+				if len(value) < maxMemoryEntrySize {
 					// memory db only accept the small data
 					c.l1Cache.Set(key, value)
 				}
@@ -309,7 +315,7 @@ func (c *StateDBCacheDatabase) cacheWrite(b ethdb.Batch) error {
 
 func (c *StateDBCacheDatabase) refreshL2ExpiredTime() {
 	unix := time.Now().Add(c.l2ExpiredTime).Unix()
-	unix = unix - (unix % 600) + 600
+	unix = unix - (unix % cacheMinGapInSecond) + cacheMinGapInSecond
 	c.l2NextExpiredTime = time.Unix(unix, 0)
 }
 
@@ -329,7 +335,7 @@ func (c *StateDBCacheDatabase) startL2ExpiredRefresh() {
 			}
 
 			pipeline.ExpireAt(context.Background(), key, c.l2NextExpiredTime)
-			if pipeline.Len() > 10000 {
+			if pipeline.Len() > maxPipelineEntriesCount {
 				_, _ = pipeline.Exec(context.Background())
 				lastWrite = time.Now()
 			}

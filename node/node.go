@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
+	"github.com/harmony-one/harmony/internal/tikv"
 	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
 	"log"
 	"math/big"
@@ -155,7 +156,7 @@ func (node *Node) Blockchain() *core.BlockChain {
 // Beaconchain returns the beaconchain from node.
 func (node *Node) Beaconchain() *core.BlockChain {
 	// tikv mode not have the BeaconChain storage
-	if node.HarmonyConfig.General.UseTiKV && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID {
+	if node.HarmonyConfig.General.RunElasticMode && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID {
 		return nil
 	}
 
@@ -219,7 +220,7 @@ func (node *Node) addPendingTransactions(newTxs types.Transactions) []error {
 	}
 
 	// in tikv mode, reader only accept the pending transaction from writer node, ignore the p2p message
-	if node.HarmonyConfig.General.UseTiKV && node.HarmonyConfig.TiKV.Role == "Reader" {
+	if node.HarmonyConfig.General.RunElasticMode && node.HarmonyConfig.TiKV.Role == tikv.RoleReader {
 		log.Printf("skip reader addPendingTransactions: %#v", newTxs)
 		return nil
 	}
@@ -437,7 +438,7 @@ func (node *Node) validateNodeMessage(ctx context.Context, payload []byte) (
 			nodeNodeMessageCounterVec.With(prometheus.Labels{"type": "block_sync"}).Inc()
 
 			// in tikv mode, not need BeaconChain message
-			if node.HarmonyConfig.General.UseTiKV && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID {
+			if node.HarmonyConfig.General.RunElasticMode && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID {
 				return nil, 0, errIgnoreBeaconMsg
 			}
 
@@ -1024,7 +1025,7 @@ func New(
 		beaconChain := node.Beaconchain()
 		if b1, b2 := beaconChain == nil, blockchain == nil; b1 || b2 {
 			// in tikv mode, not need BeaconChain
-			if !(node.HarmonyConfig.General.UseTiKV && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID) {
+			if !(node.HarmonyConfig.General.RunElasticMode && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID) {
 				var err error
 				if b2 {
 					shardID := node.NodeConfig.ShardID
@@ -1057,7 +1058,7 @@ func New(
 		txPoolConfig.Journal = fmt.Sprintf("%v/%v", node.NodeConfig.DBDir, txPoolConfig.Journal)
 		txPoolConfig.AddEvent = func(tx types.PoolTransaction, local bool) {
 			// in tikv mode, writer will publish tx pool update to all reader
-			if preempt := node.Blockchain().RedisPreempt(); preempt != nil && preempt.LastLockStatus() {
+			if node.Blockchain().IsTikvWriterMaster() {
 				err := redis_helper.PublishTxPoolUpdate(uint32(harmonyconfig.General.ShardID), tx, local)
 				if err != nil {
 					utils.Logger().Info().Err(err).Msg("redis publish txpool update error")
@@ -1073,7 +1074,7 @@ func New(
 		node.committeeCache, _ = lru.New(16)
 
 		// in tikv mode, not need BeaconChain
-		if !node.HarmonyConfig.General.UseTiKV && node.Blockchain().ShardID() != shard.BeaconChainShardID {
+		if !node.HarmonyConfig.General.RunElasticMode && node.Blockchain().ShardID() != shard.BeaconChainShardID {
 			node.BeaconWorker = worker.New(
 				node.Beaconchain().Config(), beaconChain, engine,
 			)
@@ -1128,7 +1129,7 @@ func New(
 	}
 
 	// in tikv mode, not need BeaconChain
-	if !node.HarmonyConfig.General.UseTiKV && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID {
+	if !node.HarmonyConfig.General.RunElasticMode && node.HarmonyConfig.General.ShardID != shard.BeaconChainShardID {
 		// update reward values now that node is ready
 		node.updateInitialRewardValues()
 	}
@@ -1292,22 +1293,12 @@ func (node *Node) ShutDown() {
 		utils.Logger().Error().Err(err).Msg("failed to stop p2p host")
 	}
 
-	if blockChain := node.Blockchain(); blockChain != nil {
-		blockChain.Stop()
-	}
+	node.Blockchain().Stop()
+	node.Beaconchain().Stop()
 
-	if beaconChain := node.Beaconchain(); beaconChain != nil {
-		beaconChain.Stop()
-	}
-
-	if node.HarmonyConfig.General.UseTiKV {
-		if blockChain := node.Blockchain(); blockChain != nil {
-			_, _ = blockChain.RedisPreempt().Unlock()
-		}
-
-		if beaconChain := node.Beaconchain(); beaconChain != nil {
-			_, _ = beaconChain.RedisPreempt().Unlock()
-		}
+	if node.HarmonyConfig.General.RunElasticMode {
+		_, _ = node.Blockchain().RedisPreempt().Unlock()
+		_, _ = node.Beaconchain().RedisPreempt().Unlock()
 
 		_ = redis_helper.Close()
 		time.Sleep(time.Second)
@@ -1426,7 +1417,7 @@ func (node *Node) syncFromTiKVWriter() {
 	})
 
 	// subscribe txpool update
-	if node.HarmonyConfig.TiKV.Role == "Reader" {
+	if node.HarmonyConfig.TiKV.Role == tikv.RoleReader {
 		go redis_helper.SubscribeTxPoolUpdate(bc.ShardID(), func(tx types.PoolTransaction, local bool) {
 			var err error
 			if local {

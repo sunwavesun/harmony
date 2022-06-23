@@ -67,7 +67,7 @@ type GeneralConfig struct {
 	DataDir                string
 	TraceEnable            bool
 	EnablePruneBeaconChain bool
-	UseTiKV                bool
+	RunElasticMode         bool
 }
 
 type TiKVConfig struct {
