@@ -1640,9 +1640,11 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifyHeaders bool) (int, 
 			lastCanon = block
 
 			// used for tikv mode, writer node will publish update to all reader node
-			err = redis_helper.PublishShardUpdate(bc.ShardID(), block.NumberU64(), logs)
-			if err != nil {
-				utils.Logger().Info().Err(err).Msg("redis publish shard update error")
+			if bc.isInitTiKV() {
+				err = redis_helper.PublishShardUpdate(bc.ShardID(), block.NumberU64(), logs)
+				if err != nil {
+					utils.Logger().Info().Err(err).Msg("redis publish shard update error")
+				}
 			}
 
 			// Only count canonical blocks for GC processing time
