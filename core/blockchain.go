@@ -21,9 +21,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
-	"github.com/harmony-one/harmony/internal/tikv"
-	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
 	"io"
 	"log"
 	"math/big"
@@ -33,6 +30,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
+	"github.com/harmony-one/harmony/internal/tikv"
+	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/mclock"

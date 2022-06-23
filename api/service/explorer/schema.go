@@ -3,6 +3,7 @@ package explorer
 import (
 	"encoding/binary"
 	"fmt"
+
 	"github.com/RoaringBitmap/roaring/roaring64"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"

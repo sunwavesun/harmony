@@ -1,10 +1,11 @@
 package worker
 
 import (
-	"github.com/harmony-one/harmony/core/state"
 	"math/big"
 	"math/rand"
 	"testing"
+
+	"github.com/harmony-one/harmony/core/state"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 

@@ -2,12 +2,13 @@ package node
 
 import (
 	"fmt"
-	"github.com/harmony-one/harmony/internal/tikv"
 	"math/rand"
 	"net"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/harmony-one/harmony/internal/tikv"
 
 	prom "github.com/harmony-one/harmony/api/service/prometheus"
 	"github.com/prometheus/client_golang/prometheus"

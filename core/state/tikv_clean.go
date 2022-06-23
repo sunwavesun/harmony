@@ -2,12 +2,13 @@ package state
 
 import (
 	"bytes"
+	"sync"
+	"sync/atomic"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
-	"sync"
-	"sync/atomic"
 )
 
 var secureKeyPrefix = []byte("secure-key-")

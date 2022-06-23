@@ -2,6 +2,7 @@ package prefix
 
 import (
 	"bytes"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 )
 

@@ -3,12 +3,13 @@ package redis_helper
 import (
 	"context"
 	"fmt"
+	"io"
+
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/harmony-one/harmony/core/types"
 	"github.com/harmony-one/harmony/internal/utils"
 	stakingTypes "github.com/harmony-one/harmony/staking/types"
 	"github.com/pkg/errors"
-	"io"
 )
 
 // BlockUpdate block update event

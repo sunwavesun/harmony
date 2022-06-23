@@ -3,15 +3,16 @@ package node
 import (
 	"context"
 	"fmt"
-	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
-	"github.com/harmony-one/harmony/internal/tikv"
-	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
 	"log"
 	"math/big"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
+	"github.com/harmony-one/harmony/internal/tikv"
+	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
 
 	"github.com/ethereum/go-ethereum/rlp"
 	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"

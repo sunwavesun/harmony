@@ -3,8 +3,9 @@ package node
 import (
 	"context"
 	"encoding/json"
-	"github.com/harmony-one/harmony/internal/tikv"
 	"sync"
+
+	"github.com/harmony-one/harmony/internal/tikv"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"

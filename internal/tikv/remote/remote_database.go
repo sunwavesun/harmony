@@ -3,12 +3,13 @@ package remote
 import (
 	"bytes"
 	"context"
+	"runtime/trace"
+	"sync/atomic"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/harmony-one/harmony/internal/tikv/common"
 	"github.com/tikv/client-go/v2/config"
 	"github.com/tikv/client-go/v2/rawkv"
-	"runtime/trace"
-	"sync/atomic"
 )
 
 var EmptyValueStub = []byte("HarmonyTiKVEmptyValueStub")

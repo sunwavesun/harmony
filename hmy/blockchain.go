@@ -3,8 +3,9 @@ package hmy
 import (
 	"context"
 	"fmt"
-	v3 "github.com/harmony-one/harmony/block/v3"
 	"math/big"
+
+	v3 "github.com/harmony-one/harmony/block/v3"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/bloombits"

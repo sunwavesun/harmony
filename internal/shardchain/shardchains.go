@@ -1,11 +1,12 @@
 package shardchain
 
 import (
+	"math/big"
+	"sync"
+
 	"github.com/harmony-one/harmony/core/state"
 	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
 	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
-	"math/big"
-	"sync"
 
 	"github.com/harmony-one/harmony/shard"
 

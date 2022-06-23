@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
-	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
-	"github.com/harmony-one/harmony/internal/tikv/statedb_cache"
 	"io/ioutil"
 	"math/big"
 	"math/rand"
@@ -17,6 +14,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
+	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
+	"github.com/harmony-one/harmony/internal/tikv/statedb_cache"
 
 	"github.com/harmony-one/harmony/api/service/crosslink_sending"
 	rosetta_common "github.com/harmony-one/harmony/rosetta/common"

@@ -3,9 +3,10 @@ package remote
 import (
 	"bytes"
 	"context"
+	"sync"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/harmony-one/harmony/internal/tikv/common"
-	"sync"
 )
 
 type RemoteBatch struct {

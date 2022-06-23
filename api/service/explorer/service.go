@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/RoaringBitmap/roaring/roaring64"
-	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
 	"net"
 	"net/http"
 	"path"
 	"strconv"
 	"time"
+
+	"github.com/RoaringBitmap/roaring/roaring64"
+	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/mux"

@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/RoaringBitmap/roaring/roaring64"
-	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
-	"github.com/harmony-one/harmony/internal/tikv"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/RoaringBitmap/roaring/roaring64"
+	harmonyconfig "github.com/harmony-one/harmony/internal/configs/harmony"
+	"github.com/harmony-one/harmony/internal/tikv"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/harmony-one/abool"

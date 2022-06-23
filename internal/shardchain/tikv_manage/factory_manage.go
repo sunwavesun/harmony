@@ -1,9 +1,10 @@
 package tikv_manage
 
 import (
+	"sync"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/harmony-one/harmony/internal/tikv/statedb_cache"
-	"sync"
 )
 
 type TiKvFactory interface {

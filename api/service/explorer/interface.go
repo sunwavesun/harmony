@@ -1,13 +1,14 @@
 package explorer
 
 import (
+	"path"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/leveldb"
 	tikvCommon "github.com/harmony-one/harmony/internal/tikv/common"
 	"github.com/harmony-one/harmony/internal/tikv/prefix"
 	"github.com/harmony-one/harmony/internal/tikv/remote"
-	"path"
 )
 
 // database is an adapter for *leveldb.DB

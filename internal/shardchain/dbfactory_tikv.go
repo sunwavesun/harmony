@@ -2,14 +2,15 @@ package shardchain
 
 import (
 	"fmt"
+	"io"
+	"sync"
+
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/harmony-one/harmony/internal/tikv"
 	tikvCommon "github.com/harmony-one/harmony/internal/tikv/common"
 	"github.com/harmony-one/harmony/internal/tikv/prefix"
 	"github.com/harmony-one/harmony/internal/tikv/remote"
 	"github.com/harmony-one/harmony/internal/tikv/statedb_cache"
-	"io"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/ethdb"
 )

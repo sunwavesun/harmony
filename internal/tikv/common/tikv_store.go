@@ -1,9 +1,10 @@
 package common
 
 import (
+	"io"
+
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	"io"
 )
 
 type TiKVStore interface {
