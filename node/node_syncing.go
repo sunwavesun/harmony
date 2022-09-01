@@ -404,7 +404,7 @@ func (node *Node) SendNewBlockToUnsync() {
 			elapseTime := time.Now().UnixNano() - config.timestamp
 			if elapseTime > broadcastTimeout {
 				utils.Logger().Warn().Str("peerID", peerID).Msg("[SYNC] SendNewBlockToUnsync to peer timeout")
-				node.peerRegistrationRecord[peerID].client.Close()
+				node.peerRegistrationRecord[peerID].client.Close("send new block to peer timeout")
 				delete(node.peerRegistrationRecord, peerID)
 				continue
 			}
@@ -413,13 +413,13 @@ func (node *Node) SendNewBlockToUnsync() {
 				sendBytes = blockWithSigBytes
 			}
 			response, err := config.client.PushNewBlock(node.GetSyncID(), sendBytes, false)
-			// close the connection if cannot push new block to unsync node
+			// close the connection if cannot push new block to not synchronized node
 			if err != nil {
-				node.peerRegistrationRecord[peerID].client.Close()
+				node.peerRegistrationRecord[peerID].client.Close("cannot push new block to not synchronized node")
 				delete(node.peerRegistrationRecord, peerID)
 			}
 			if response != nil && response.Type == downloader_pb.DownloaderResponse_INSYNC {
-				node.peerRegistrationRecord[peerID].client.Close()
+				node.peerRegistrationRecord[peerID].client.Close("node is synchronized")
 				delete(node.peerRegistrationRecord, peerID)
 			}
 		}

@@ -94,7 +94,7 @@ func (ss *EpochSync) syncLoop(bc core.BlockChain, isBeacon bool, _ *consensus.Co
 	for {
 		if maxHeight == 0 || maxHeight == math.MaxUint64 {
 			utils.Logger().Info().
-				Msgf("[EPOCHSYNC] No peers to sync (isBeacon: %t, ShardID: %d, peerscount: %d)",
+				Msgf("[EPOCHSYNC] No peers to sync (isBeacon: %t, ShardID: %d, peersCount: %d)",
 					isBeacon, bc.ShardID(), ss.syncConfig.PeersCount())
 			return 10
 		}
@@ -109,7 +109,7 @@ func (ss *EpochSync) syncLoop(bc core.BlockChain, isBeacon bool, _ *consensus.Co
 		}
 		if otherEpoch < curEpoch {
 			for _, peerCfg := range ss.syncConfig.GetPeers() {
-				ss.syncConfig.RemovePeer(peerCfg, fmt.Sprintf("[EPOCHSYNC]: current height is higher that others, removve peers: %s", peerCfg.String()))
+				ss.syncConfig.RemovePeer(peerCfg, fmt.Sprintf("[EPOCHSYNC]: current height is higher that others, remove peers: %s", peerCfg.String()))
 			}
 			return 2
 		}

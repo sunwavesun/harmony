@@ -58,14 +58,15 @@ func createSyncConfig(syncConfig *SyncConfig, peers []p2p.Peer, shardID uint32) 
 	}
 	// limit the number of dns peers to connect
 	randSeed := time.Now().UnixNano()
-	peers = limitNumPeers(peers, randSeed)
+	targetSize, peers := limitNumPeers(peers, randSeed)
 
 	utils.Logger().Debug().
-		Int("len", len(peers)).
+		Int("peers count", len(peers)).
+		Int("target size", targetSize).
 		Uint32("shardID", shardID).
 		Msg("[SYNC] CreateSyncConfig: len of peers")
 
-	if len(peers) == 0 {
+	if targetSize == 0 {
 		return syncConfig, errors.New("[SYNC] no peers to connect to")
 	}
 	if syncConfig != nil {
@@ -73,24 +74,23 @@ func createSyncConfig(syncConfig *SyncConfig, peers []p2p.Peer, shardID uint32) 
 	}
 	syncConfig = NewSyncConfig(shardID, nil)
 
-	var wg sync.WaitGroup
+	var connectedPeers int
 	for _, peer := range peers {
-		wg.Add(1)
-		go func(peer p2p.Peer) {
-			defer wg.Done()
-			client := downloader.ClientSetup(peer.IP, peer.Port)
-			if client == nil {
-				return
-			}
-			peerConfig := &SyncPeerConfig{
-				ip:     peer.IP,
-				port:   peer.Port,
-				client: client,
-			}
-			syncConfig.AddPeer(peerConfig)
-		}(peer)
+		client := downloader.ClientSetup(peer.IP, peer.Port)
+		if client == nil || !client.IsReady() {
+			continue
+		}
+		peerConfig := &SyncPeerConfig{
+			ip:     peer.IP,
+			port:   peer.Port,
+			client: client,
+		}
+		syncConfig.AddPeer(peerConfig)
+		connectedPeers++
+		if connectedPeers >= targetSize {
+			break
+		}
 	}
-	wg.Wait()
 	utils.Logger().Info().
 		Int("len", len(syncConfig.peers)).
 		Uint32("shardID", shardID).
