@@ -1,4 +1,4 @@
-package downloader
+package stagedstreamsync
 
 import (
 	"context"
@@ -23,10 +23,10 @@ import (
 type (
 	// Downloader is responsible for sync task of one shard
 	Downloader struct {
-		bc           blockChain
-		syncProtocol syncProtocol
-		bh           *beaconHelper
-		staged       bool
+		bc                 blockChain
+		syncProtocol       syncProtocol
+		bh                 *beaconHelper
+		stagedSyncInstance *StagedStreamSync
 
 		downloadC chan struct{}
 		closeC    chan struct{}
@@ -69,26 +69,37 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	logger := utils.Logger().With().Str("module", "StagedStreamSync").Uint32("ShardID", bc.ShardID()).Logger()
+
+	stagedSyncInstance, err := CreateStagedSync(bc,	true, sp, config, logger)
+	if err != nil {
+		return nil
+	}
+
 	return &Downloader{
-		bc:           bc,
-		syncProtocol: sp,
-		bh:           bh,
-		staged:  	  config.Staged,
+		bc:                 bc,
+		syncProtocol:       sp,
+		bh:                 bh,
+		stagedSyncInstance: stagedSyncInstance,
 		
-		downloadC: make(chan struct{}),
-		closeC:    make(chan struct{}),
-		ctx:       ctx,
-		cancel:    cancel,
+		downloadC:          make(chan struct{}),
+		closeC:             make(chan struct{}),
+		ctx:                ctx,
+		cancel:             cancel,
 
 		status: newStatus(),
 		config: config,
-		logger: utils.Logger().With().Str("module", "downloader").Uint32("ShardID", bc.ShardID()).Logger(),
+		logger: logger,
 	}
 }
 
+
 // Start start the downloader
 func (d *Downloader) Start() {
-	go d.run()
+	go func() {
+		d.waitForBootFinish()
+		d.loop()
+	}()
 
 	if d.bh != nil {
 		d.bh.start()
@@ -139,11 +150,6 @@ func (d *Downloader) SubscribeDownloadStarted(ch chan struct{}) event.Subscripti
 func (d *Downloader) SubscribeDownloadFinished(ch chan struct{}) event.Subscription {
 	d.evtDownloadFinishedSubscribed = true
 	return d.evtDownloadFinished.Subscribe(ch)
-}
-
-func (d *Downloader) run() {
-	d.waitForBootFinish()
-	d.loop()
 }
 
 // waitForBootFinish wait for stream manager to finish the initial discovery and have
@@ -201,7 +207,9 @@ func (d *Downloader) loop() {
 			go trigger()
 
 		case <-d.downloadC:
-			addedBN, err := d.doDownload(initSync)
+			//addedBN, err := d.doDownload(initSync)
+			headBeforeSync := d.bc.CurrentBlock().NumberU64()
+			err := d.stagedSyncInstance.doSync(initSync)
 			if err != nil {
 				// If error happens, sleep 5 seconds and retry
 				d.logger.Warn().Err(err).Bool("bootstrap", initSync).Msg("failed to download")
@@ -212,7 +220,8 @@ func (d *Downloader) loop() {
 				time.Sleep(1 * time.Second)
 				continue
 			}
-			d.logger.Info().Int("block added", addedBN).
+			addedBN := d.bc.CurrentBlock().NumberU64() - headBeforeSync
+			d.logger.Info().Uint64("block added", addedBN).
 				Uint64("current height", d.bc.CurrentBlock().NumberU64()).
 				Bool("initSync", initSync).
 				Uint32("shard", d.bc.ShardID()).
@@ -235,6 +244,7 @@ func (d *Downloader) loop() {
 }
 
 func (d *Downloader) doDownload(initSync bool) (n int, err error) {
+
 	if initSync {
 		d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
 			Uint32("shard ID", d.bc.ShardID()).Msg("start long range sync")
@@ -246,6 +256,7 @@ func (d *Downloader) doDownload(initSync bool) (n int, err error) {
 
 		n, err = d.doShortRangeSync()
 	}
+
 	if err != nil {
 		pl := d.promLabels()
 		pl["error"] = err.Error()

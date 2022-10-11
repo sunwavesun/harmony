@@ -23,6 +23,7 @@ const (
 	Prometheus
 	Synchronize
 	CrosslinkSending
+	StagedStreamSync
 )
 
 func (t Type) String() string {
