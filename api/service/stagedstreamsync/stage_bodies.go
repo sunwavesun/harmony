@@ -19,8 +19,6 @@ type StageBodiesCfg struct {
 	ctx           context.Context
 	bc            core.BlockChain
 	db            kv.RwDB
-	turbo         bool
-	turboModeCh   chan struct{}
 	bgProcRunning bool
 	isBeacon      bool
 	logProgress   bool
@@ -32,12 +30,11 @@ func NewStageBodies(cfg StageBodiesCfg) *StageBodies {
 	}
 }
 
-func NewStageBodiesCfg(ctx context.Context, bc core.BlockChain, db kv.RwDB, isBeacon bool, turbo bool, logProgress bool) StageBodiesCfg {
+func NewStageBodiesCfg(ctx context.Context, bc core.BlockChain, db kv.RwDB, isBeacon bool, logProgress bool) StageBodiesCfg {
 	return StageBodiesCfg{
 		ctx:         ctx,
 		bc:          bc,
 		db:          db,
-		turbo:       turbo,
 		isBeacon:    isBeacon,
 		logProgress: logProgress,
 	}
@@ -78,6 +75,11 @@ func initBlocksCacheDB(ctx context.Context, isBeacon bool) (db kv.RwDB, err erro
 
 // Exec progresses Bodies stage in the forward direction
 func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) (err error) {
+
+	// for short range sync, skip this stage
+	if !s.state.initSync {
+		return nil
+	}
 
 	maxHeight := s.state.downloader.status.targetBN
 	currentHead := b.configs.bc.CurrentBlock().NumberU64()

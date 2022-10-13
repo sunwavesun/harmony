@@ -358,7 +358,9 @@ func (s *StagedStreamSync) doSync(initSync bool) error {
 		s.logger.Info().Uint64("target number", bn).Msg("estimated remote current number")
 		s.downloader.status.setTargetBN(bn)
 	*/
-	return s.fetchAndInsertBlocks(bn)
+	
+	//return s.fetchAndInsertBlocks(bn)
+	return nil
 }
 
 func (s *StagedStreamSync) checkPrerequisites() error {

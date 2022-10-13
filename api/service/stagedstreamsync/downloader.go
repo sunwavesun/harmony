@@ -71,7 +71,7 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 
 	logger := utils.Logger().With().Str("module", "StagedStreamSync").Uint32("ShardID", bc.ShardID()).Logger()
 
-	stagedSyncInstance, err := CreateStagedSync(bc,	true, sp, config, logger)
+	stagedSyncInstance, err := CreateStagedSync(bc, true, sp, config, logger, true) //TODO: move logProgress to configs
 	if err != nil {
 		return nil
 	}
@@ -81,18 +81,17 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 		syncProtocol:       sp,
 		bh:                 bh,
 		stagedSyncInstance: stagedSyncInstance,
-		
-		downloadC:          make(chan struct{}),
-		closeC:             make(chan struct{}),
-		ctx:                ctx,
-		cancel:             cancel,
+
+		downloadC: make(chan struct{}),
+		closeC:    make(chan struct{}),
+		ctx:       ctx,
+		cancel:    cancel,
 
 		status: newStatus(),
 		config: config,
 		logger: logger,
 	}
 }
-
 
 // Start start the downloader
 func (d *Downloader) Start() {

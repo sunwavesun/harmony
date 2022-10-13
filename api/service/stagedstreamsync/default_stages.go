@@ -10,43 +10,78 @@ type CleanUpOrder []SyncStageID
 
 var DefaultForwardOrder = ForwardOrder{
 	Heads,
-	BlockHashes,
+	ShortRange,
+	SyncEpoch,
 	BlockBodies,
 	// Stages below don't use Internet
 	States,
-	LastMile,
 	Finish,
 }
 
 var DefaultRevertOrder = RevertOrder{
 	Finish,
-	LastMile,
 	States,
 	BlockBodies,
-	BlockHashes,
+	SyncEpoch,
+	ShortRange,
 	Heads,
 }
 
 var DefaultCleanUpOrder = CleanUpOrder{
 	Finish,
-	LastMile,
 	States,
 	BlockBodies,
-	BlockHashes,
+	SyncEpoch,
+	ShortRange,
 	Heads,
 }
 
 func DefaultStages(ctx context.Context,
 	headsCfg StageHeadsCfg,
-	) []*Stage {
+	srCfg StageShortRangeCfg,
+	seCfg StageEpochCfg,
+	bodiesCfg StageBodiesCfg,
+	statesCfg StageStatesCfg,
+	finishCfg StageFinishCfg,
+) []*Stage {
 
 	handlerStageHeads := NewStageHeads(headsCfg)
+	handlerStageShortRange := NewStageShortRange(srCfg)
+	handlerStageEpochSync := NewStageEpoch(seCfg)
+	handlerStageBodies := NewStageBodies(bodiesCfg)
+	handlerStageStates := NewStageStates(statesCfg)
+	handlerStageFinish := NewStageFinish(finishCfg)
 
 	return []*Stage{
 		{
 			ID:          Heads,
 			Description: "Retrieve Chain Heads",
 			Handler:     handlerStageHeads,
+		},
+		{
+			ID:          ShortRange,
+			Description: "Short Range Sync",
+			Handler:     handlerStageShortRange,
+		},
+		{
+			ID:          SyncEpoch,
+			Description: "Sync only Last Block of Epoch",
+			Handler:     handlerStageEpochSync,
+		},
+		{
+			ID:          BlockBodies,
+			Description: "Retrieve Block Bodies",
+			Handler:     handlerStageBodies,
+		},
+		{
+			ID:          States,
+			Description: "Update Blockchain State",
+			Handler:     handlerStageStates,
+		},
+		{
+			ID:          Finish,
+			Description: "Finalize Changes",
+			Handler:     handlerStageFinish,
 		},
 	}
 }

@@ -48,6 +48,7 @@ func CreateStagedSync(
 	protocol syncProtocol,
 	config Config,
 	logger zerolog.Logger,
+	logProgress bool,
 ) (*StagedStreamSync, error) {
 
 	ctx := context.Background()
@@ -68,10 +69,20 @@ func CreateStagedSync(
 		return nil, errInitDB
 	}
 
-	headsCfg := NewStageHeadersCfg(ctx, bc, db)
+	stageHeadsCfg := NewStageHeadersCfg(ctx, bc, db)
+	stageShortRangeCfg := NewStageShortRangeCfg(ctx, bc, db)
+	stageSyncEpochCfg := NewStageEpochCfg(ctx, bc, db)
+	stageBodiesCfg := NewStageBodiesCfg(ctx, bc, db, isBeacon, logProgress)
+	stageStatesCfg := NewStageStatesCfg(ctx, bc, db, logger, logProgress)
+	stageFinishCfg := NewStageFinishCfg(ctx, db)
 
 	stages := DefaultStages(ctx,
-		headsCfg,
+		stageHeadsCfg,
+		stageShortRangeCfg,
+		stageSyncEpochCfg,
+		stageBodiesCfg,
+		stageStatesCfg,
+		stageFinishCfg,
 	)
 
 	return New(ctx,

@@ -9,10 +9,10 @@ type SyncStageID string
 
 const (
 	Heads       SyncStageID = "Heads"       // Heads are downloaded
-	BlockHashes SyncStageID = "BlockHashes" // block hashes are downloaded from peers
+	ShortRange  SyncStageID = "ShortRange"  // short range
+	SyncEpoch   SyncStageID = "SyncEpoch"   // epoch sync
 	BlockBodies SyncStageID = "BlockBodies" // Block bodies are downloaded, TxHash and UncleHash are getting verified
 	States      SyncStageID = "States"      // will construct most recent state from downloaded blocks
-	LastMile    SyncStageID = "LastMile"    // update blocks after sync and update last mile blocks as well
 	Finish      SyncStageID = "Finish"      // Nominal stage after all other stages
 )
 
