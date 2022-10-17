@@ -81,7 +81,7 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 		return nil
 	}
 
-	maxHeight := s.state.downloader.status.targetBN
+	maxHeight := s.state.status.targetBN
 	currentHead := b.configs.bc.CurrentBlock().NumberU64()
 	if currentHead >= maxHeight {
 		return nil

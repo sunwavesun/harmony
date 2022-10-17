@@ -49,8 +49,7 @@ func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *Sta
 	}
 
 	// doShortRangeSyncForEpochSync
-	d := s.state.downloader
-	if _, err := sr.doShortRangeSync(d); err != nil {
+	if _, err := sr.doShortRangeSync(s); err != nil {
 		return err
 	}
 
@@ -79,24 +78,24 @@ func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *Sta
 // 1. Obtain the block hashes and compute the longest hash chain..
 // 2. Get blocks by hashes from computed hash chain.
 // 3. Insert the blocks to blockchain.
-func (sr *StageShortRange) doShortRangeSync(d *Downloader) (int, error) {
+func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 
-	numShortRangeCounterVec.With(d.promLabels()).Inc()
+	numShortRangeCounterVec.With(s.state.promLabels()).Inc()
 
-	srCtx, cancel := context.WithTimeout(d.ctx, shortRangeTimeout)
+	srCtx, cancel := context.WithTimeout(s.state.ctx, shortRangeTimeout)
 	defer cancel()
 
 	sh := &srHelper{
-		syncProtocol: d.syncProtocol,
+		syncProtocol: s.state.protocol,
 		ctx:          srCtx,
-		config:       d.config,
-		logger:       d.logger.With().Str("mode", "short range").Logger(),
+		config:       s.state.config,
+		logger:       s.state.logger.With().Str("mode", "short range").Logger(),
 	}
 
 	if err := sh.checkPrerequisites(); err != nil {
 		return 0, errors.Wrap(err, "prerequisite")
 	}
-	curBN := d.bc.CurrentBlock().NumberU64()
+	curBN := s.state.bc.CurrentBlock().NumberU64()
 	hashChain, whitelist, err := sh.getHashChain(sh.prepareBlockHashNumbers(curBN))
 	if err != nil {
 		return 0, errors.Wrap(err, "getHashChain")
@@ -107,31 +106,31 @@ func (sr *StageShortRange) doShortRangeSync(d *Downloader) (int, error) {
 	}
 
 	expEndBN := curBN + uint64(len(hashChain))
-	d.logger.Info().Uint64("current number", curBN).
+	s.state.logger.Info().Uint64("current number", curBN).
 		Uint64("target number", expEndBN).
 		Interface("hashChain", hashChain).
 		Msg("short range start syncing")
-	d.startSyncing()
-	d.status.setTargetBN(expEndBN)
+	s.state.status.startSyncing()
+	s.state.status.setTargetBN(expEndBN)
 	defer func() {
-		d.logger.Info().Msg("short range finished syncing")
-		d.finishSyncing()
+		s.state.logger.Info().Msg("short range finished syncing")
+		s.state.status.finishSyncing()
 	}()
 
 	blocks, stids, err := sh.getBlocksByHashes(hashChain, whitelist)
 	if err != nil {
-		d.logger.Warn().Err(err).Msg("getBlocksByHashes failed")
+		s.state.logger.Warn().Err(err).Msg("getBlocksByHashes failed")
 		if !errors.Is(err, context.Canceled) {
 			sh.removeStreams(whitelist) // Remote nodes cannot provide blocks with target hashes
 		}
 		return 0, errors.Wrap(err, "getBlocksByHashes")
 	}
-	d.logger.Info().Int("num blocks", len(blocks)).Msg("getBlockByHashes result")
+	s.state.logger.Info().Int("num blocks", len(blocks)).Msg("getBlockByHashes result")
 
-	n, err := verifyAndInsertBlocks(d.bc, blocks)
-	numBlocksInsertedShortRangeHistogramVec.With(d.promLabels()).Observe(float64(n))
+	n, err := verifyAndInsertBlocks(s.state.bc, blocks)
+	numBlocksInsertedShortRangeHistogramVec.With(s.state.promLabels()).Observe(float64(n))
 	if err != nil {
-		d.logger.Warn().Err(err).Int("blocks inserted", n).Msg("Insert block failed")
+		s.state.logger.Warn().Err(err).Int("blocks inserted", n).Msg("Insert block failed")
 		if sh.blameAllStreams(blocks, n, err) {
 			sh.removeStreams(whitelist) // Data provided by remote nodes is corrupted
 		} else {
@@ -141,7 +140,7 @@ func (sr *StageShortRange) doShortRangeSync(d *Downloader) (int, error) {
 		}
 		return n, err
 	}
-	d.logger.Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
+	s.state.logger.Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
 
 	return len(blocks), nil
 }

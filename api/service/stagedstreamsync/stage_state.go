@@ -48,7 +48,7 @@ func NewStageStatesCfg(ctx context.Context,
 // Exec progresses States stage in the forward direction
 func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) (err error) {
 
-	maxHeight := s.state.downloader.status.targetBN
+	maxHeight := s.state.status.targetBN
 	currentHead := stg.configs.bc.CurrentBlock().NumberU64()
 	if currentHead >= maxHeight {
 		return nil

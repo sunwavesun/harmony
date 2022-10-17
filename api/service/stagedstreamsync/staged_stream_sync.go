@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/harmony-one/harmony/consensus"
 	"github.com/harmony-one/harmony/core"
@@ -18,43 +19,41 @@ import (
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 )
 
 type StagedStreamSync struct {
-	ctx context.Context
-	bc  core.BlockChain
-	// consensus *consensus.Consensus
-	// worker    *worker.Worker
+	ctx        context.Context
+	bc         core.BlockChain
 	isBeacon   bool
 	isExplorer bool
 	db         kv.RwDB
-
 	protocol   syncProtocol
 	downloader *Downloader
-
-	gbm      *getBlocksManager // initialized when finished get block number
-	inserted int
-
-	config Config
-	logger zerolog.Logger
+	gbm        *getBlocksManager // initialized when finished get block number
+	inserted   int
+	config     Config
+	logger     zerolog.Logger
+	status     status
+	initSync   bool // if sets to true, node start long range syncing
 
 	revertPoint     *uint64 // used to run stages
 	prevRevertPoint *uint64 // used to get value from outside of staged sync after cycle (for example to notify RPCDaemon)
 	invalidBlock    common.Hash
+	currentStage    uint
+	LogProgress     bool
+	currentCycle    SyncCycle // current cycle
+	stages          []*Stage
+	revertOrder     []*Stage
+	pruningOrder    []*Stage
+	timings         []Timing
+	logPrefixes     []string
 
-	stages       []*Stage
-	revertOrder  []*Stage
-	pruningOrder []*Stage
-	currentStage uint
-	timings      []Timing
-	logPrefixes  []string
-
-	LogProgress bool
-	// if sets to true, node start long range syncing
-	initSync bool
-	// current cycle
-	currentCycle SyncCycle
+	evtDownloadFinished           event.Feed // channel for each download task finished
+	evtDownloadFinishedSubscribed bool
+	evtDownloadStarted            event.Feed // channel for each download has started
+	evtDownloadStartedSubscribed  bool
 }
 
 // BlockWithSig the serialization structure for request DownloaderRequest_BLOCKWITHSIG
@@ -225,6 +224,7 @@ func New(ctx context.Context,
 	isBeacon bool,
 	protocol syncProtocol,
 	gbm *getBlocksManager,
+	status status,
 	config Config,
 	logger zerolog.Logger,
 ) *StagedStreamSync {
@@ -241,10 +241,26 @@ func New(ctx context.Context,
 		db:          db,
 		protocol:    protocol,
 		gbm:         gbm,
+		status:      status,
 		inserted:    0,
 		config:      config,
 		logger:      logger,
+		stages:      stagesList,
 		logPrefixes: logPrefixes,
+	}
+}
+
+func (s *StagedStreamSync) startSyncing() {
+	s.status.startSyncing()
+	if s.evtDownloadStartedSubscribed {
+		s.evtDownloadStarted.Send(struct{}{})
+	}
+}
+
+func (s *StagedStreamSync) finishSyncing() {
+	s.status.finishSyncing()
+	if s.evtDownloadFinishedSubscribed {
+		s.evtDownloadFinished.Send(struct{}{})
 	}
 }
 
@@ -286,10 +302,10 @@ func (s *StagedStreamSync) doSync(initSync bool) error {
 		Uint64("target height", bn).
 		Msgf("staged sync is executing ... ")
 
-	s.downloader.status.setTargetBN(bn)
+	s.status.setTargetBN(bn)
 
-	s.downloader.startSyncing()
-	defer s.downloader.finishSyncing()
+	s.startSyncing()
+	defer s.finishSyncing()
 
 	for {
 		startHead := s.bc.CurrentBlock().NumberU64()
@@ -356,9 +372,9 @@ func (s *StagedStreamSync) doSync(initSync bool) error {
 		defer s.downloader.finishSyncing()
 
 		s.logger.Info().Uint64("target number", bn).Msg("estimated remote current number")
-		s.downloader.status.setTargetBN(bn)
+		s.status.setTargetBN(bn)
 	*/
-	
+
 	//return s.fetchAndInsertBlocks(bn)
 	return nil
 }
@@ -508,6 +524,11 @@ func (s *StagedStreamSync) processBlocks(results []*blockResult, targetBN uint64
 		longRangeSyncedBlockCounterVec.With(s.downloader.promLabels()).Inc()
 	}
 	s.gbm.HandleInsertResult(results)
+}
+
+func (s *StagedStreamSync) promLabels() prometheus.Labels {
+	sid := s.bc.ShardID()
+	return prometheus.Labels{"ShardID": fmt.Sprintf("%d", sid)}
 }
 
 func (s *StagedStreamSync) checkHaveEnoughStreams() error {

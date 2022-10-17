@@ -46,6 +46,7 @@ func CreateStagedSync(
 	bc core.BlockChain,
 	UseMemDB bool,
 	protocol syncProtocol,
+	status status,
 	config Config,
 	logger zerolog.Logger,
 	logProgress bool,
@@ -92,6 +93,7 @@ func CreateStagedSync(
 		isBeacon,
 		protocol,
 		nil,
+		status,
 		config,
 		logger,
 	), nil

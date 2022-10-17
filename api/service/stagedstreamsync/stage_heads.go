@@ -49,7 +49,7 @@ func (heads *StageHeads) Exec(firstCycle bool, invalidBlockRevert bool, s *Stage
 		defer tx.Rollback()
 	}
 
-	maxHeight := s.state.downloader.status.targetBN
+	maxHeight := s.state.status.targetBN
 	maxBlocksPerSyncCycle := uint64(1024) // TODO: should be in config -> s.state.MaxBlocksPerSyncCycle
 	currentHeight := heads.configs.bc.CurrentBlock().NumberU64()
 	s.state.currentCycle.TargetHeight = maxHeight

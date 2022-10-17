@@ -50,8 +50,7 @@ func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 	}
 
 	// doShortRangeSyncForEpochSync
-	d := s.state.downloader
-	if _, err := sr.doShortRangeSyncForEpochSync(d); err != nil {
+	if _, err := sr.doShortRangeSyncForEpochSync(s); err != nil {
 		return err
 	}
 
@@ -74,25 +73,26 @@ func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 	return nil
 }
 
-func (sr *StageEpoch) doShortRangeSyncForEpochSync(d *Downloader) (int, error) {
-	numShortRangeCounterVec.With(d.promLabels()).Inc()
+func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
+	//TODO:
+	//numShortRangeCounterVec.With(d.promLabels()).Inc()
 
-	srCtx, cancel := context.WithTimeout(d.ctx, shortRangeTimeout)
+	srCtx, cancel := context.WithTimeout(s.state.ctx, shortRangeTimeout)
 	defer cancel()
 
 	sh := &srHelper{
-		syncProtocol: d.syncProtocol,
+		syncProtocol: s.state.protocol,
 		ctx:          srCtx,
-		config:       d.config,
-		logger:       d.logger.With().Str("mode", "short range").Logger(),
+		config:       s.state.config,
+		logger:       s.state.logger.With().Str("mode", "short range").Logger(),
 	}
 
 	if err := sh.checkPrerequisites(); err != nil {
 		return 0, errors.Wrap(err, "prerequisite")
 	}
-	curBN := d.bc.CurrentBlock().NumberU64()
+	curBN := s.state.bc.CurrentBlock().NumberU64()
 	bns := make([]uint64, 0, numBlocksByNumPerRequest)
-	loopEpoch := d.bc.CurrentHeader().Epoch().Uint64() //+ 1
+	loopEpoch := s.state.bc.CurrentHeader().Epoch().Uint64() //+ 1
 	for len(bns) < numBlocksByNumPerRequest {
 		blockNum := shard.Schedule.EpochLastBlock(loopEpoch)
 		if blockNum > curBN {
@@ -113,13 +113,13 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(d *Downloader) (int, error) {
 		// short circuit for no sync is needed
 		return 0, nil
 	}
-	n, err := d.bc.InsertChain(blocks, true)
-	numBlocksInsertedShortRangeHistogramVec.With(d.promLabels()).Observe(float64(n))
+	n, err := s.state.bc.InsertChain(blocks, true)
+	numBlocksInsertedShortRangeHistogramVec.With(s.state.promLabels()).Observe(float64(n))
 	if err != nil {
 		sh.removeStreams([]sttypes.StreamID{streamID}) // Data provided by remote nodes is corrupted
 		return n, err
 	}
-	d.logger.Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
+	s.state.logger.Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
 
 	return len(blocks), nil
 }

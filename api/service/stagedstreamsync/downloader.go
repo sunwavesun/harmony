@@ -33,12 +33,6 @@ type (
 		ctx       context.Context
 		cancel    func()
 
-		evtDownloadFinished           event.Feed // channel for each download task finished
-		evtDownloadFinishedSubscribed bool
-		evtDownloadStarted            event.Feed // channel for each download has started
-		evtDownloadStartedSubscribed  bool
-
-		status status
 		config Config
 		logger zerolog.Logger
 	}
@@ -71,7 +65,8 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 
 	logger := utils.Logger().With().Str("module", "StagedStreamSync").Uint32("ShardID", bc.ShardID()).Logger()
 
-	stagedSyncInstance, err := CreateStagedSync(bc, true, sp, config, logger, true) //TODO: move logProgress to configs
+	status := newStatus()
+	stagedSyncInstance, err := CreateStagedSync(bc, true, sp, status, config, logger, true) //TODO: move logProgress to configs
 	if err != nil {
 		return nil
 	}
@@ -87,7 +82,6 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 		ctx:       ctx,
 		cancel:    cancel,
 
-		status: newStatus(),
 		config: config,
 		logger: logger,
 	}
@@ -132,7 +126,7 @@ func (d *Downloader) NumPeers() int {
 
 // IsSyncing return the current sync status
 func (d *Downloader) SyncStatus() (bool, uint64, uint64) {
-	syncing, target := d.status.get()
+	syncing, target := d.stagedSyncInstance.status.get()
 	if !syncing {
 		target = d.bc.CurrentBlock().NumberU64()
 	}
@@ -141,14 +135,14 @@ func (d *Downloader) SyncStatus() (bool, uint64, uint64) {
 
 // SubscribeDownloadStarted subscribe download started
 func (d *Downloader) SubscribeDownloadStarted(ch chan struct{}) event.Subscription {
-	d.evtDownloadStartedSubscribed = true
-	return d.evtDownloadStarted.Subscribe(ch)
+	d.stagedSyncInstance.evtDownloadStartedSubscribed = true
+	return d.stagedSyncInstance.evtDownloadStarted.Subscribe(ch)
 }
 
 // SubscribeDownloadFinished subscribe the download finished
 func (d *Downloader) SubscribeDownloadFinished(ch chan struct{}) event.Subscription {
-	d.evtDownloadFinishedSubscribed = true
-	return d.evtDownloadFinished.Subscribe(ch)
+	d.stagedSyncInstance.evtDownloadFinishedSubscribed = true
+	return d.stagedSyncInstance.evtDownloadFinished.Subscribe(ch)
 }
 
 // waitForBootFinish wait for stream manager to finish the initial discovery and have
@@ -239,43 +233,6 @@ func (d *Downloader) loop() {
 		case <-d.closeC:
 			return
 		}
-	}
-}
-
-func (d *Downloader) doDownload(initSync bool) (n int, err error) {
-
-	if initSync {
-		d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
-			Uint32("shard ID", d.bc.ShardID()).Msg("start long range sync")
-
-		n, err = d.doLongRangeSync()
-	} else {
-		d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
-			Uint32("shard ID", d.bc.ShardID()).Msg("start short range sync")
-
-		n, err = d.doShortRangeSync()
-	}
-
-	if err != nil {
-		pl := d.promLabels()
-		pl["error"] = err.Error()
-		numFailedDownloadCounterVec.With(pl).Inc()
-		return
-	}
-	return
-}
-
-func (d *Downloader) startSyncing() {
-	d.status.startSyncing()
-	if d.evtDownloadStartedSubscribed {
-		d.evtDownloadStarted.Send(struct{}{})
-	}
-}
-
-func (d *Downloader) finishSyncing() {
-	d.status.finishSyncing()
-	if d.evtDownloadFinishedSubscribed {
-		d.evtDownloadFinished.Send(struct{}{})
 	}
 }
 
