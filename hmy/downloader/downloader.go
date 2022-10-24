@@ -238,13 +238,16 @@ func (d *Downloader) doDownload(initSync bool) (n int, err error) {
 	if initSync {
 		d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
 			Uint32("shard ID", d.bc.ShardID()).Msg("start long range sync")
-
+		fmt.Println("LOoooooooNG RANGE SYNC ---------------------> STARTED")
 		n, err = d.doLongRangeSync()
+		fmt.Println("LOoooooooNG RANGE SYNC ---------------------> END: ",n)
 	} else {
 		d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
 			Uint32("shard ID", d.bc.ShardID()).Msg("start short range sync")
 
-		n, err = d.doShortRangeSync()
+			fmt.Println("SHORT RANGE SYNC ---------------------> STARTED")
+			n, err = d.doShortRangeSync()
+			fmt.Println("SHORT RANGE SYNC ---------------------> END: ",n)
 	}
 	if err != nil {
 		pl := d.promLabels()

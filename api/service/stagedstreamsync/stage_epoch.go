@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/harmony-one/harmony/core"
+	"github.com/harmony-one/harmony/internal/utils"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
 	"github.com/harmony-one/harmony/shard"
 	"github.com/ledgerwatch/erigon-lib/kv"
@@ -45,13 +46,15 @@ func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 		return nil
 	}
 
-	if _, ok := sr.configs.bc.(*core.EpochChain); ok {
+	if _, ok := sr.configs.bc.(*core.EpochChain); !ok {
 		return nil
 	}
 
 	// doShortRangeSyncForEpochSync
-	if _, err := sr.doShortRangeSyncForEpochSync(s); err != nil {
+	if n, err := sr.doShortRangeSyncForEpochSync(s); err != nil {
 		return err
+	} else {
+		s.state.inserted = n
 	}
 
 	useInternalTx := tx == nil
@@ -84,7 +87,7 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 		syncProtocol: s.state.protocol,
 		ctx:          srCtx,
 		config:       s.state.config,
-		logger:       s.state.logger.With().Str("mode", "short range").Logger(),
+		logger:       utils.Logger().With().Str("mode", "short range").Logger(),
 	}
 
 	if err := sh.checkPrerequisites(); err != nil {
@@ -119,7 +122,7 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 		sh.removeStreams([]sttypes.StreamID{streamID}) // Data provided by remote nodes is corrupted
 		return n, err
 	}
-	s.state.logger.Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
+	utils.Logger().Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
 
 	return len(blocks), nil
 }

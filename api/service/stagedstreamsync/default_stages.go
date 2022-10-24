@@ -10,8 +10,8 @@ type CleanUpOrder []SyncStageID
 
 var DefaultForwardOrder = ForwardOrder{
 	Heads,
-	ShortRange,
 	SyncEpoch,
+	ShortRange,
 	BlockBodies,
 	// Stages below don't use Internet
 	States,
@@ -22,8 +22,8 @@ var DefaultRevertOrder = RevertOrder{
 	Finish,
 	States,
 	BlockBodies,
-	SyncEpoch,
 	ShortRange,
+	SyncEpoch,
 	Heads,
 }
 
@@ -31,8 +31,8 @@ var DefaultCleanUpOrder = CleanUpOrder{
 	Finish,
 	States,
 	BlockBodies,
-	SyncEpoch,
 	ShortRange,
+	SyncEpoch,
 	Heads,
 }
 
@@ -59,14 +59,14 @@ func DefaultStages(ctx context.Context,
 			Handler:     handlerStageHeads,
 		},
 		{
-			ID:          ShortRange,
-			Description: "Short Range Sync",
-			Handler:     handlerStageShortRange,
-		},
-		{
 			ID:          SyncEpoch,
 			Description: "Sync only Last Block of Epoch",
 			Handler:     handlerStageEpochSync,
+		},
+		{
+			ID:          ShortRange,
+			Description: "Short Range Sync",
+			Handler:     handlerStageShortRange,
 		},
 		{
 			ID:          BlockBodies,

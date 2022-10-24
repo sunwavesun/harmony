@@ -201,7 +201,7 @@ func (d *Downloader) loop() {
 
 		case <-d.downloadC:
 			//addedBN, err := d.doDownload(initSync)
-			headBeforeSync := d.bc.CurrentBlock().NumberU64()
+			//headBeforeSync := d.bc.CurrentBlock().NumberU64()
 			err := d.stagedSyncInstance.doSync(initSync)
 			if err != nil {
 				// If error happens, sleep 5 seconds and retry
@@ -213,8 +213,8 @@ func (d *Downloader) loop() {
 				time.Sleep(1 * time.Second)
 				continue
 			}
-			addedBN := d.bc.CurrentBlock().NumberU64() - headBeforeSync
-			d.logger.Info().Uint64("block added", addedBN).
+			addedBN := d.stagedSyncInstance.inserted // d.bc.CurrentBlock().NumberU64() - headBeforeSync
+			d.logger.Info().Int("block added", addedBN).
 				Uint64("current height", d.bc.CurrentBlock().NumberU64()).
 				Bool("initSync", initSync).
 				Uint32("shard", d.bc.ShardID()).

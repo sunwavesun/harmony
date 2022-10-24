@@ -26,10 +26,6 @@ const (
 	// cache db keys
 	LastBlockHeight = "LastBlockHeight"
 	LastBlockHash   = "LastBlockHash"
-
-	// cache db  names
-	BlockHashesCacheDB = "cache_block_hashes"
-	BlockCacheDB       = "cache_blocks"
 )
 
 var Buckets = []string{

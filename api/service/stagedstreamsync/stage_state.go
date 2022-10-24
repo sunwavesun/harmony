@@ -8,6 +8,7 @@ import (
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/internal/utils"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 )
 
@@ -18,9 +19,6 @@ type StageStatesCfg struct {
 	ctx         context.Context
 	bc          core.BlockChain
 	db          kv.RwDB
-	gbm         *getBlocksManager
-	protocol    syncProtocol
-	downloader  *Downloader
 	logger      zerolog.Logger
 	logProgress bool
 }
@@ -36,6 +34,7 @@ func NewStageStatesCfg(ctx context.Context,
 	db kv.RwDB,
 	logger zerolog.Logger,
 	logProgress bool) StageStatesCfg {
+
 	return StageStatesCfg{
 		ctx:         ctx,
 		bc:          bc,
@@ -47,6 +46,11 @@ func NewStageStatesCfg(ctx context.Context,
 
 // Exec progresses States stage in the forward direction
 func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) (err error) {
+
+	// for short range sync, skip this step
+	if !s.state.initSync {
+		return nil
+	}
 
 	maxHeight := s.state.status.targetBN
 	currentHead := stg.configs.bc.CurrentBlock().NumberU64()
@@ -78,6 +82,14 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 	}
 
 	// insert blocks
+	// insert the blocks to chain. Return when the target block number is reached.
+	stg.insertChainLoop(s.state.gbm, s.state.protocol, s.state.promLabels(), targetHeight)
+
+	select {
+	case <-s.state.ctx.Done():
+		return s.state.ctx.Err()
+	default:
+	}
 
 	if useInternalTx {
 		if err := tx.Commit(); err != nil {
@@ -90,7 +102,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 
 func (stg *StageStates) insertChainLoop(gbm *getBlocksManager,
 	protocol syncProtocol,
-	downloader *Downloader,
+	lbls prometheus.Labels,
 	targetBN uint64) {
 
 	var (
@@ -122,7 +134,7 @@ func (stg *StageStates) insertChainLoop(gbm *getBlocksManager,
 		case <-resultC:
 			blockResults := gbm.PullContinuousBlocks(blocksPerInsert)
 			if len(blockResults) > 0 {
-				stg.processBlocks(blockResults, gbm, protocol, downloader, targetBN)
+				stg.processBlocks(blockResults, gbm, protocol, lbls, targetBN)
 				// more blocks is expected being able to be pulled from queue
 				trigger()
 			}
@@ -136,7 +148,7 @@ func (stg *StageStates) insertChainLoop(gbm *getBlocksManager,
 func (stg *StageStates) processBlocks(results []*blockResult,
 	gbm *getBlocksManager,
 	protocol syncProtocol,
-	downloader *Downloader,
+	pl prometheus.Labels,
 	targetBN uint64) {
 
 	blocks := blockResultsToBlocks(results)
@@ -146,7 +158,6 @@ func (stg *StageStates) processBlocks(results []*blockResult,
 			stg.configs.logger.Warn().Err(err).Uint64("target block", targetBN).
 				Uint64("block number", block.NumberU64()).
 				Msg("insert blocks failed in long range")
-			pl := downloader.promLabels()
 			pl["error"] = err.Error()
 			longRangeFailInsertedBlockCounterVec.With(pl).Inc()
 
@@ -156,7 +167,7 @@ func (stg *StageStates) processBlocks(results []*blockResult,
 		}
 
 		//s.inserted++
-		longRangeSyncedBlockCounterVec.With(downloader.promLabels()).Inc()
+		longRangeSyncedBlockCounterVec.With(pl).Inc()
 	}
 	gbm.HandleInsertResult(results)
 }

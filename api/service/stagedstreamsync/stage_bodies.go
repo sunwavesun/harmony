@@ -8,8 +8,6 @@ import (
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/internal/utils"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
-	"github.com/ledgerwatch/log/v3"
 )
 
 type StageBodies struct {
@@ -38,39 +36,6 @@ func NewStageBodiesCfg(ctx context.Context, bc core.BlockChain, db kv.RwDB, isBe
 		isBeacon:    isBeacon,
 		logProgress: logProgress,
 	}
-}
-
-func initBlocksCacheDB(ctx context.Context, isBeacon bool) (db kv.RwDB, err error) {
-	// create caches db
-	cachedbName := BlockCacheDB
-	if isBeacon {
-		cachedbName = "beacon_" + cachedbName
-	}
-	cachedb := mdbx.NewMDBX(log.New()).Path(cachedbName).MustOpen()
-	tx, errRW := cachedb.BeginRw(ctx)
-	if errRW != nil {
-		utils.Logger().Error().
-			Err(errRW).
-			Msg("[STAGED_SYNC] initializing sync caches failed")
-		return nil, errRW
-	}
-	defer tx.Rollback()
-	if err := tx.CreateBucket(DownloadedBlocksBucket); err != nil {
-		utils.Logger().Error().
-			Err(err).
-			Msg("[STAGED_SYNC] creating cache bucket failed")
-		return nil, err
-	}
-	if err := tx.CreateBucket(StageProgressBucket); err != nil {
-		utils.Logger().Error().
-			Err(err).
-			Msg("[STAGED_SYNC] creating progress bucket failed")
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return cachedb, nil
 }
 
 // Exec progresses Bodies stage in the forward direction
@@ -119,8 +84,8 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 	}
 
 	// Fetch blocks from neighbors
-	gbm := newGetBlocksManager(b.configs.bc, targetHeight, s.state.logger)
-	s.state.gbm = gbm
+	s.state.gbm = newGetBlocksManager(b.configs.bc, targetHeight, s.state.logger)
+	gbm := s.state.gbm
 
 	// Setup workers to fetch blocks from remote node
 	var wg sync.WaitGroup

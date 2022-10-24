@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/harmony-one/harmony/core"
+	"github.com/harmony-one/harmony/internal/utils"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/pkg/errors"
@@ -39,18 +40,21 @@ func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *Sta
 	if invalidBlockRevert {
 		return nil
 	}
+
 	// for long range sync, skip this stage
 	if s.state.initSync {
 		return nil
 	}
 
-	if _, ok := sr.configs.bc.(*core.EpochChain); !ok {
+	if _, ok := sr.configs.bc.(*core.EpochChain); ok {
 		return nil
 	}
 
 	// doShortRangeSyncForEpochSync
-	if _, err := sr.doShortRangeSync(s); err != nil {
+	if n, err := sr.doShortRangeSync(s); err != nil {
 		return err
+	} else {
+		s.state.inserted = n
 	}
 
 	useInternalTx := tx == nil
@@ -89,7 +93,7 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 		syncProtocol: s.state.protocol,
 		ctx:          srCtx,
 		config:       s.state.config,
-		logger:       s.state.logger.With().Str("mode", "short range").Logger(),
+		logger:       utils.Logger().With().Str("mode", "short range").Logger(),
 	}
 
 	if err := sh.checkPrerequisites(); err != nil {
@@ -100,37 +104,39 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "getHashChain")
 	}
+
 	if len(hashChain) == 0 {
 		// short circuit for no sync is needed
 		return 0, nil
 	}
 
 	expEndBN := curBN + uint64(len(hashChain))
-	s.state.logger.Info().Uint64("current number", curBN).
+	utils.Logger().Info().Uint64("current number", curBN).
 		Uint64("target number", expEndBN).
 		Interface("hashChain", hashChain).
 		Msg("short range start syncing")
 	s.state.status.startSyncing()
 	s.state.status.setTargetBN(expEndBN)
 	defer func() {
-		s.state.logger.Info().Msg("short range finished syncing")
+		utils.Logger().Info().Msg("short range finished syncing")
 		s.state.status.finishSyncing()
 	}()
 
 	blocks, stids, err := sh.getBlocksByHashes(hashChain, whitelist)
 	if err != nil {
-		s.state.logger.Warn().Err(err).Msg("getBlocksByHashes failed")
+		utils.Logger().Warn().Err(err).Msg("getBlocksByHashes failed")
 		if !errors.Is(err, context.Canceled) {
 			sh.removeStreams(whitelist) // Remote nodes cannot provide blocks with target hashes
 		}
 		return 0, errors.Wrap(err, "getBlocksByHashes")
 	}
-	s.state.logger.Info().Int("num blocks", len(blocks)).Msg("getBlockByHashes result")
+
+	utils.Logger().Info().Int("num blocks", len(blocks)).Msg("getBlockByHashes result")
 
 	n, err := verifyAndInsertBlocks(s.state.bc, blocks)
 	numBlocksInsertedShortRangeHistogramVec.With(s.state.promLabels()).Observe(float64(n))
 	if err != nil {
-		s.state.logger.Warn().Err(err).Int("blocks inserted", n).Msg("Insert block failed")
+		utils.Logger().Warn().Err(err).Int("blocks inserted", n).Msg("Insert block failed")
 		if sh.blameAllStreams(blocks, n, err) {
 			sh.removeStreams(whitelist) // Data provided by remote nodes is corrupted
 		} else {
@@ -140,7 +146,7 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 		}
 		return n, err
 	}
-	s.state.logger.Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
+	utils.Logger().Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
 
 	return len(blocks), nil
 }

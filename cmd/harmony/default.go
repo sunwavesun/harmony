@@ -190,13 +190,13 @@ var (
 		Downloader:     true,
 		StagedSync:     true,
 		StagedSyncCfg:  defaultStagedSyncConfig,
-		Concurrency:    4,
-		MinPeers:       5,
-		InitStreams:    5,
-		DiscSoftLowCap: 5,
-		DiscHardLowCap: 5,
+		Concurrency:    2,
+		MinPeers:       2,
+		InitStreams:    2,
+		DiscSoftLowCap: 2,
+		DiscHardLowCap: 2,
 		DiscHighCap:    1024,
-		DiscBatch:      8,
+		DiscBatch:      3,
 	}
 
 	defaultElseSyncConfig = harmonyconfig.SyncConfig{

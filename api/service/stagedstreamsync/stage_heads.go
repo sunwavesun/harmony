@@ -39,6 +39,11 @@ func (heads *StageHeads) Exec(firstCycle bool, invalidBlockRevert bool, s *Stage
 		return nil
 	}
 
+	// no need for short range sync
+	if !s.state.initSync {
+		return nil
+	}
+
 	useInternalTx := tx == nil
 	if useInternalTx {
 		var err error
@@ -64,7 +69,7 @@ func (heads *StageHeads) Exec(firstCycle bool, invalidBlockRevert bool, s *Stage
 	}
 
 	if currentHeight >= maxHeight {
-		s.state.logger.Info().Uint64("current number", currentHeight).Uint64("target number", maxHeight).
+		utils.Logger().Info().Uint64("current number", currentHeight).Uint64("target number", maxHeight).
 			Msg("[STAGED_STREAM_SYNC] early return of long range sync")
 		return nil
 	}

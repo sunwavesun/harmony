@@ -30,7 +30,6 @@ type StagedStreamSync struct {
 	isExplorer bool
 	db         kv.RwDB
 	protocol   syncProtocol
-	downloader *Downloader
 	gbm        *getBlocksManager // initialized when finished get block number
 	inserted   int
 	config     Config
@@ -307,6 +306,8 @@ func (s *StagedStreamSync) doSync(initSync bool) error {
 	s.startSyncing()
 	defer s.finishSyncing()
 
+	var totalInserted int
+
 	for {
 		startHead := s.bc.CurrentBlock().NumberU64()
 		canRunCycleInOneTransaction := false
@@ -323,7 +324,7 @@ func (s *StagedStreamSync) doSync(initSync bool) error {
 		startTime := time.Now()
 
 		// Do one cycle of staged sync
-		initialCycle := false // s.syncStatus.currentCycle.Number == 0
+		initialCycle := s.currentCycle.Number == 0
 		if err := s.Run(s.DB(), tx, initialCycle); err != nil {
 			utils.Logger().Error().
 				Err(err).
@@ -346,9 +347,20 @@ func (s *StagedStreamSync) doSync(initSync bool) error {
 			fmt.Println("sync speed:", syncSpeed, "blocks/s")
 		}
 
+		totalInserted += int(currHead - startHead)
+
 		s.currentCycle.lock.Lock()
 		s.currentCycle.Number++
 		s.currentCycle.lock.Unlock()
+
+		if currHead == startHead {
+			break
+		}
+	}
+
+	// for long range set the inserted (for short range it will be set by method itself)
+	if initSync {
+		s.inserted = totalInserted
 	}
 
 	//////////////////////////////////////////////////////////
@@ -511,7 +523,7 @@ func (s *StagedStreamSync) processBlocks(results []*blockResult, targetBN uint64
 			s.logger.Warn().Err(err).Uint64("target block", targetBN).
 				Uint64("block number", block.NumberU64()).
 				Msg("insert blocks failed in long range")
-			pl := s.downloader.promLabels()
+			pl := s.promLabels()
 			pl["error"] = err.Error()
 			longRangeFailInsertedBlockCounterVec.With(pl).Inc()
 
@@ -521,7 +533,7 @@ func (s *StagedStreamSync) processBlocks(results []*blockResult, targetBN uint64
 		}
 
 		s.inserted++
-		longRangeSyncedBlockCounterVec.With(s.downloader.promLabels()).Inc()
+		longRangeSyncedBlockCounterVec.With(s.promLabels()).Inc()
 	}
 	s.gbm.HandleInsertResult(results)
 }
