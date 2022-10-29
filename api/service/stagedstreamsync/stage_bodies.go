@@ -14,12 +14,11 @@ type StageBodies struct {
 	configs StageBodiesCfg
 }
 type StageBodiesCfg struct {
-	ctx           context.Context
-	bc            core.BlockChain
-	db            kv.RwDB
-	bgProcRunning bool
-	isBeacon      bool
-	logProgress   bool
+	ctx         context.Context
+	bc          core.BlockChain
+	db          kv.RwDB
+	isBeacon    bool
+	logProgress bool
 }
 
 func NewStageBodies(cfg StageBodiesCfg) *StageBodies {
@@ -36,6 +35,10 @@ func NewStageBodiesCfg(ctx context.Context, bc core.BlockChain, db kv.RwDB, isBe
 		isBeacon:    isBeacon,
 		logProgress: logProgress,
 	}
+}
+
+func (b *StageBodies) SetStageContext(ctx context.Context) {
+	b.configs.ctx = ctx
 }
 
 // Exec progresses Bodies stage in the forward direction
@@ -85,16 +88,15 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 
 	// Fetch blocks from neighbors
 	s.state.gbm = newGetBlocksManager(b.configs.bc, targetHeight, s.state.logger)
-	gbm := s.state.gbm
 
 	// Setup workers to fetch blocks from remote node
 	var wg sync.WaitGroup
 
 	for i := 0; i != s.state.config.Concurrency; i++ {
 		worker := &getBlocksWorker{
-			gbm:      gbm,
+			gbm:      s.state.gbm,
 			protocol: s.state.protocol,
-			ctx:      s.state.ctx,
+			ctx:      b.configs.ctx,
 		}
 		wg.Add(1)
 		go worker.workLoop(&wg)

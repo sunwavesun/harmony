@@ -1,7 +1,6 @@
 package stagedstreamsync
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sync"
@@ -9,16 +8,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/event"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/harmony-one/harmony/consensus"
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/core/types"
 	"github.com/harmony-one/harmony/internal/utils"
-	"github.com/harmony-one/harmony/p2p"
 	syncproto "github.com/harmony-one/harmony/p2p/stream/protocols/sync"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 )
@@ -34,8 +29,9 @@ type StagedStreamSync struct {
 	inserted   int
 	config     Config
 	logger     zerolog.Logger
-	status     status
-	initSync   bool // if sets to true, node start long range syncing
+	status     status //TODO: merge this with currentSyncCycle
+	initSync   bool   // if sets to true, node start long range syncing
+	UseMemDB   bool
 
 	revertPoint     *uint64 // used to run stages
 	prevRevertPoint *uint64 // used to get value from outside of staged sync after cycle (for example to notify RPCDaemon)
@@ -222,217 +218,55 @@ func New(ctx context.Context,
 	stagesList []*Stage,
 	isBeacon bool,
 	protocol syncProtocol,
-	gbm *getBlocksManager,
-	status status,
+	useMemDB bool,
 	config Config,
 	logger zerolog.Logger,
 ) *StagedStreamSync {
+
+	revertStages := make([]*Stage, len(stagesList))
+	for i, stageIndex := range DefaultRevertOrder {
+		for _, s := range stagesList {
+			if s.ID == stageIndex {
+				revertStages[i] = s
+				break
+			}
+		}
+	}
+	pruneStages := make([]*Stage, len(stagesList))
+	for i, stageIndex := range DefaultCleanUpOrder {
+		for _, s := range stagesList {
+			if s.ID == stageIndex {
+				pruneStages[i] = s
+				break
+			}
+		}
+	}
 
 	logPrefixes := make([]string, len(stagesList))
 	for i := range stagesList {
 		logPrefixes[i] = fmt.Sprintf("%d/%d %s", i+1, len(stagesList), stagesList[i].ID)
 	}
 
+	status := newStatus()
+
 	return &StagedStreamSync{
-		ctx:         ctx,
-		bc:          bc,
-		isBeacon:    isBeacon,
-		db:          db,
-		protocol:    protocol,
-		gbm:         gbm,
-		status:      status,
-		inserted:    0,
-		config:      config,
-		logger:      logger,
-		stages:      stagesList,
-		logPrefixes: logPrefixes,
+		ctx:          ctx,
+		bc:           bc,
+		isBeacon:     isBeacon,
+		db:           db,
+		protocol:     protocol,
+		gbm:          nil,
+		status:       status,
+		inserted:     0,
+		config:       config,
+		logger:       logger,
+		stages:       stagesList,
+		currentStage: 0,
+		revertOrder:  revertStages,
+		pruningOrder: pruneStages,
+		logPrefixes:  logPrefixes,
+		UseMemDB:     useMemDB,
 	}
-}
-
-func (s *StagedStreamSync) startSyncing() {
-	s.status.startSyncing()
-	if s.evtDownloadStartedSubscribed {
-		s.evtDownloadStarted.Send(struct{}{})
-	}
-}
-
-func (s *StagedStreamSync) finishSyncing() {
-	s.status.finishSyncing()
-	if s.evtDownloadFinishedSubscribed {
-		s.evtDownloadFinished.Send(struct{}{})
-	}
-}
-
-func (s *StagedStreamSync) doSync(initSync bool) error {
-
-	s.initSync = initSync
-	// if initSync {
-	// 	d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
-	// 		Uint32("shard ID", d.bc.ShardID()).Msg("start long range sync")
-
-	// 	n, err = d.doLongRangeSync()
-	// } else {
-	// 	d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
-	// 		Uint32("shard ID", d.bc.ShardID()).Msg("start short range sync")
-
-	// 	n, err = d.doShortRangeSync()
-	// }
-
-	// if err != nil {
-	// 	pl := d.promLabels()
-	// 	pl["error"] = err.Error()
-	// 	numFailedDownloadCounterVec.With(pl).Inc()
-	// 	return
-	// }
-
-	//////////////////////////////////////////////////////////
-	// My Code                                              //
-	//////////////////////////////////////////////////////////
-	if err := s.checkPrerequisites(); err != nil {
-		return err
-	}
-	bn, err := s.estimateCurrentNumber()
-	if err != nil {
-		return err
-	}
-
-	utils.Logger().Info().
-		Uint64("current height", s.bc.CurrentBlock().NumberU64()).
-		Uint64("target height", bn).
-		Msgf("staged sync is executing ... ")
-
-	s.status.setTargetBN(bn)
-
-	s.startSyncing()
-	defer s.finishSyncing()
-
-	var totalInserted int
-
-	for {
-		startHead := s.bc.CurrentBlock().NumberU64()
-		canRunCycleInOneTransaction := false
-
-		var tx kv.RwTx
-		if canRunCycleInOneTransaction {
-			var err error
-			if tx, err = s.DB().BeginRw(context.Background()); err != nil {
-				return err
-			}
-			defer tx.Rollback()
-		}
-
-		startTime := time.Now()
-
-		// Do one cycle of staged sync
-		initialCycle := s.currentCycle.Number == 0
-		if err := s.Run(s.DB(), tx, initialCycle); err != nil {
-			utils.Logger().Error().
-				Err(err).
-				Bool("isBeacon", s.isBeacon).
-				Uint32("shard", s.bc.ShardID()).
-				Uint64("currentHeight", startHead).
-				Msgf("[STAGED_SYNC] sync cycle failed")
-			break
-		}
-
-		// calculating sync speed (blocks/second)
-		currHead := s.bc.CurrentBlock().NumberU64()
-		if s.LogProgress && currHead-startHead > 0 {
-			dt := time.Now().Sub(startTime).Seconds()
-			speed := float64(0)
-			if dt > 0 {
-				speed = float64(currHead-startHead) / dt
-			}
-			syncSpeed := fmt.Sprintf("%.2f", speed)
-			fmt.Println("sync speed:", syncSpeed, "blocks/s")
-		}
-
-		totalInserted += int(currHead - startHead)
-
-		s.currentCycle.lock.Lock()
-		s.currentCycle.Number++
-		s.currentCycle.lock.Unlock()
-
-		if currHead == startHead {
-			break
-		}
-	}
-
-	// for long range set the inserted (for short range it will be set by method itself)
-	if initSync {
-		s.inserted = totalInserted
-	}
-
-	//////////////////////////////////////////////////////////
-	// Long Range Sync                                      //
-	//////////////////////////////////////////////////////////
-	/*
-		if err := s.checkPrerequisites(); err != nil {
-			return err
-		}
-		bn, err := s.estimateCurrentNumber()
-		if err != nil {
-			return err
-		}
-		if curBN := s.bc.CurrentBlock().NumberU64(); bn <= curBN {
-			s.logger.Info().Uint64("current number", curBN).Uint64("target number", bn).
-				Msg("early return of long range sync")
-			return nil
-		}
-
-		s.downloader.startSyncing()
-		defer s.downloader.finishSyncing()
-
-		s.logger.Info().Uint64("target number", bn).Msg("estimated remote current number")
-		s.status.setTargetBN(bn)
-	*/
-
-	//return s.fetchAndInsertBlocks(bn)
-	return nil
-}
-
-func (s *StagedStreamSync) checkPrerequisites() error {
-	return s.checkHaveEnoughStreams()
-}
-
-// estimateCurrentNumber roughly estimate the current block number.
-// The block number does not need to be exact, but just a temporary target of the iteration
-func (s *StagedStreamSync) estimateCurrentNumber() (uint64, error) {
-	var (
-		cnResults = make(map[sttypes.StreamID]uint64)
-		lock      sync.Mutex
-		wg        sync.WaitGroup
-	)
-	wg.Add(s.config.Concurrency)
-	for i := 0; i != s.config.Concurrency; i++ {
-		go func() {
-			defer wg.Done()
-			bn, stid, err := s.doGetCurrentNumberRequest()
-			if err != nil {
-				s.logger.Err(err).Str("streamID", string(stid)).
-					Msg("getCurrentNumber request failed. Removing stream")
-				if !errors.Is(err, context.Canceled) {
-					s.protocol.RemoveStream(stid)
-				}
-				return
-			}
-			lock.Lock()
-			cnResults[stid] = bn
-			lock.Unlock()
-		}()
-	}
-	wg.Wait()
-
-	if len(cnResults) == 0 {
-		select {
-		case <-s.ctx.Done():
-			return 0, s.ctx.Err()
-		default:
-		}
-		return 0, errors.New("zero block number response from remote nodes")
-	}
-	bn := computeBlockNumberByMaxVote(cnResults)
-	return bn, nil
 }
 
 func (s *StagedStreamSync) doGetCurrentNumberRequest() (uint64, sttypes.StreamID, error) {
@@ -446,98 +280,6 @@ func (s *StagedStreamSync) doGetCurrentNumberRequest() (uint64, sttypes.StreamID
 	return bn, stid, nil
 }
 
-// fetchAndInsertBlocks use the pipeline pattern to boost the performance of inserting blocks.
-// TODO: For resharding, use the pipeline to do fast sync (epoch loop, header loop, body loop)
-func (s *StagedStreamSync) fetchAndInsertBlocks(targetBN uint64) error {
-	gbm := newGetBlocksManager(s.bc, targetBN, s.logger)
-	s.gbm = gbm
-
-	// Setup workers to fetch blocks from remote node
-	for i := 0; i != s.config.Concurrency; i++ {
-		worker := &getBlocksWorker{
-			gbm:      gbm,
-			protocol: s.protocol,
-			ctx:      s.ctx,
-		}
-		go worker.workLoop(nil)
-	}
-
-	// insert the blocks to chain. Return when the target block number is reached.
-	s.insertChainLoop(targetBN)
-
-	select {
-	case <-s.ctx.Done():
-		return s.ctx.Err()
-	default:
-	}
-	return nil
-}
-
-func (s *StagedStreamSync) insertChainLoop(targetBN uint64) {
-	var (
-		gbm     = s.gbm
-		t       = time.NewTicker(100 * time.Millisecond)
-		resultC = make(chan struct{}, 1)
-	)
-	defer t.Stop()
-
-	trigger := func() {
-		select {
-		case resultC <- struct{}{}:
-		default:
-		}
-	}
-
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-
-		case <-t.C:
-			// Redundancy, periodically check whether there is blocks that can be processed
-			trigger()
-
-		case <-gbm.resultC:
-			// New block arrive in resultQueue
-			trigger()
-
-		case <-resultC:
-			blockResults := gbm.PullContinuousBlocks(blocksPerInsert)
-			if len(blockResults) > 0 {
-				s.processBlocks(blockResults, targetBN)
-				// more blocks is expected being able to be pulled from queue
-				trigger()
-			}
-			if s.bc.CurrentBlock().NumberU64() >= targetBN {
-				return
-			}
-		}
-	}
-}
-
-func (s *StagedStreamSync) processBlocks(results []*blockResult, targetBN uint64) {
-	blocks := blockResultsToBlocks(results)
-
-	for i, block := range blocks {
-		if err := verifyAndInsertBlock(s.bc, block); err != nil {
-			s.logger.Warn().Err(err).Uint64("target block", targetBN).
-				Uint64("block number", block.NumberU64()).
-				Msg("insert blocks failed in long range")
-			pl := s.promLabels()
-			pl["error"] = err.Error()
-			longRangeFailInsertedBlockCounterVec.With(pl).Inc()
-
-			s.protocol.RemoveStream(results[i].stid)
-			s.gbm.HandleInsertError(results, i)
-			return
-		}
-
-		s.inserted++
-		longRangeSyncedBlockCounterVec.With(s.promLabels()).Inc()
-	}
-	s.gbm.HandleInsertResult(results)
-}
-
 func (s *StagedStreamSync) promLabels() prometheus.Labels {
 	sid := s.bc.ShardID()
 	return prometheus.Labels{"ShardID": fmt.Sprintf("%d", sid)}
@@ -548,6 +290,13 @@ func (s *StagedStreamSync) checkHaveEnoughStreams() error {
 	if numStreams < s.config.MinStreams {
 		return fmt.Errorf("number of streams smaller than minimum: %v < %v",
 			numStreams, s.config.MinStreams)
+	}
+	return nil
+}
+
+func (s *StagedStreamSync) SetNewContext(ctx context.Context) error {
+	for _, s := range s.stages {
+		s.Handler.SetStageContext(ctx)
 	}
 	return nil
 }
@@ -812,90 +561,8 @@ func (s *StagedStreamSync) EnableStages(ids ...SyncStageID) {
 	}
 }
 
-// checkPeersDuplicity checks whether there are duplicates in p2p.Peer
-func checkPeersDuplicity(ps []p2p.Peer) error {
-	type peerDupID struct {
-		ip   string
-		port string
-	}
-	m := make(map[peerDupID]struct{})
-	for _, p := range ps {
-		dip := peerDupID{p.IP, p.Port}
-		if _, ok := m[dip]; ok {
-			return fmt.Errorf("duplicate peer [%v:%v]", p.IP, p.Port)
-		}
-		m[dip] = struct{}{}
-	}
-	return nil
-}
-
 // GetActivePeerNumber returns the number of active peers
 func (ss *StagedStreamSync) GetActiveStreams() int {
 	//TODO: return active streams
 	return 0
-}
-
-// RlpDecodeBlockOrBlockWithSig decode payload to types.Block or BlockWithSig.
-// Return the block with commitSig if set.
-func RlpDecodeBlockOrBlockWithSig(payload []byte) (*types.Block, error) {
-	var block *types.Block
-	if err := rlp.DecodeBytes(payload, &block); err == nil {
-		// received payload as *types.Block
-		return block, nil
-	}
-
-	var bws BlockWithSig
-	if err := rlp.DecodeBytes(payload, &bws); err == nil {
-		block := bws.Block
-		block.SetCurrentCommitSig(bws.CommitSigAndBitmap)
-		return block, nil
-	}
-	return nil, errors.New("failed to decode to either types.Block or BlockWithSig")
-}
-
-// CompareBlockByHash compares two block by hash, it will be used in sort the blocks
-func CompareBlockByHash(a *types.Block, b *types.Block) int {
-	ha := a.Hash()
-	hb := b.Hash()
-	return bytes.Compare(ha[:], hb[:])
-}
-
-// GetHowManyMaxConsensus will get the most common blocks and the first such blockID
-func GetHowManyMaxConsensus(blocks []*types.Block) (int, int) {
-	// As all peers are sorted by their blockHashes, all equal blockHashes should come together and consecutively.
-	curCount := 0
-	curFirstID := -1
-	maxCount := 0
-	maxFirstID := -1
-	for i := range blocks {
-		if curFirstID == -1 || CompareBlockByHash(blocks[curFirstID], blocks[i]) != 0 {
-			curCount = 1
-			curFirstID = i
-		} else {
-			curCount++
-		}
-		if curCount > maxCount {
-			maxCount = curCount
-			maxFirstID = curFirstID
-		}
-	}
-	return maxFirstID, maxCount
-}
-
-func (ss *StagedStreamSync) addConsensusLastMile(bc core.BlockChain, consensus *consensus.Consensus) error {
-	curNumber := bc.CurrentBlock().NumberU64()
-	blockIter, err := consensus.GetLastMileBlockIter(curNumber + 1)
-	if err != nil {
-		return err
-	}
-	for {
-		block := blockIter.Next()
-		if block == nil {
-			break
-		}
-		if _, err := bc.InsertChain(types.Blocks{block}, true); err != nil {
-			return errors.Wrap(err, "failed to InsertChain")
-		}
-	}
-	return nil
 }

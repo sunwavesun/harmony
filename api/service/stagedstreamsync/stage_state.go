@@ -44,6 +44,10 @@ func NewStageStatesCfg(ctx context.Context,
 	}
 }
 
+func (stg *StageStates) SetStageContext(ctx context.Context) {
+	stg.configs.ctx = ctx
+}
+
 // Exec progresses States stage in the forward direction
 func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) (err error) {
 
@@ -83,8 +87,15 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 
 	// insert blocks
 	// insert the blocks to chain. Return when the target block number is reached.
-	stg.insertChainLoop(s.state.gbm, s.state.protocol, s.state.promLabels(), targetHeight)
+	// blockResults := s.state.gbm.PullContinuousBlocks(blocksPerInsert)
+	// s.state.inserted = 0
+	// if len(blockResults) > 0 {
+	// 	lbls := s.state.promLabels()
+	// 	nInserted := stg.processBlocks(blockResults, s.state.gbm, s.state.protocol, lbls, targetHeight)
+	// 	s.state.inserted = nInserted
+	// }
 
+	stg.insertChainLoop(s.state.gbm, s.state.protocol, s.state.promLabels(), targetHeight)
 	select {
 	case <-s.state.ctx.Done():
 		return s.state.ctx.Err()
@@ -149,9 +160,10 @@ func (stg *StageStates) processBlocks(results []*blockResult,
 	gbm *getBlocksManager,
 	protocol syncProtocol,
 	pl prometheus.Labels,
-	targetBN uint64) {
+	targetBN uint64) int {
 
 	blocks := blockResultsToBlocks(results)
+	var nInserted int
 
 	for i, block := range blocks {
 		if err := verifyAndInsertBlock(stg.configs.bc, block); err != nil {
@@ -163,13 +175,13 @@ func (stg *StageStates) processBlocks(results []*blockResult,
 
 			protocol.RemoveStream(results[i].stid)
 			gbm.HandleInsertError(results, i)
-			return
+			return nInserted
 		}
-
-		//s.inserted++
+		nInserted++
 		longRangeSyncedBlockCounterVec.With(pl).Inc()
 	}
 	gbm.HandleInsertResult(results)
+	return nInserted
 }
 
 func (stg *StageStates) saveProgress(s *StageState, tx kv.RwTx) (err error) {

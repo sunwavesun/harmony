@@ -28,6 +28,10 @@ func NewStageFinishCfg(ctx context.Context, db kv.RwDB) StageFinishCfg {
 	}
 }
 
+func (finish *StageFinish) SetStageContext(ctx context.Context) {
+	finish.configs.ctx = ctx
+}
+
 func (finish *StageFinish) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) error {
 	useInternalTx := tx == nil
 	if useInternalTx {

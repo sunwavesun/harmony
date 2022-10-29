@@ -1,6 +1,7 @@
 package stagedstreamsync
 
 import (
+	"context"
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -23,6 +24,9 @@ type StageHandler interface {
 	// CleanUp is the execution function for the stage to prune old data.
 	// * p - is the current state of the stage and contains stage data.
 	CleanUp(firstCycle bool, p *CleanUpState, tx kv.RwTx) error
+
+	// SetStageContext updates the context for stage
+	SetStageContext(ctx context.Context)
 }
 
 // Stage is a single sync stage in staged sync.

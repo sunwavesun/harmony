@@ -921,7 +921,9 @@ func setupStagedSyncService(node *node.Node, host p2p.Host, hc harmonyconfig.Har
 
 	//Setup stream sync service
 	s := stagedstreamsync.NewService(host, blockchains, sConfig)
+
 	node.RegisterService(service.StagedStreamSync, s)
+	
 	d := s.Downloaders.GetShardDownloader(node.Blockchain().ShardID())
 	if hc.Sync.Downloader && hc.General.NodeType != nodeTypeExplorer {
 		node.Consensus.SetDownloader(d) // Set downloader when stream client is active

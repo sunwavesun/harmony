@@ -32,6 +32,10 @@ func NewStageHeadersCfg(ctx context.Context, bc core.BlockChain, db kv.RwDB) Sta
 	}
 }
 
+func (heads *StageHeads) SetStageContext(ctx context.Context) {
+	heads.configs.ctx = ctx
+}
+
 func (heads *StageHeads) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) error {
 
 	// no need to update target if we are redoing the stages because of bad block

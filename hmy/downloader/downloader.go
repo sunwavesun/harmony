@@ -26,7 +26,6 @@ type (
 		bc           blockChain
 		syncProtocol syncProtocol
 		bh           *beaconHelper
-		staged       bool
 
 		downloadC chan struct{}
 		closeC    chan struct{}
@@ -73,8 +72,7 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 		bc:           bc,
 		syncProtocol: sp,
 		bh:           bh,
-		staged:  	  config.Staged,
-		
+
 		downloadC: make(chan struct{}),
 		closeC:    make(chan struct{}),
 		ctx:       ctx,
@@ -238,16 +236,13 @@ func (d *Downloader) doDownload(initSync bool) (n int, err error) {
 	if initSync {
 		d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
 			Uint32("shard ID", d.bc.ShardID()).Msg("start long range sync")
-		fmt.Println("LOoooooooNG RANGE SYNC ---------------------> STARTED")
+
 		n, err = d.doLongRangeSync()
-		fmt.Println("LOoooooooNG RANGE SYNC ---------------------> END: ",n)
 	} else {
 		d.logger.Info().Uint64("current number", d.bc.CurrentBlock().NumberU64()).
 			Uint32("shard ID", d.bc.ShardID()).Msg("start short range sync")
 
-			fmt.Println("SHORT RANGE SYNC ---------------------> STARTED")
-			n, err = d.doShortRangeSync()
-			fmt.Println("SHORT RANGE SYNC ---------------------> END: ",n)
+		n, err = d.doShortRangeSync()
 	}
 	if err != nil {
 		pl := d.promLabels()

@@ -61,15 +61,15 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 		bh = newBeaconHelper(bc, config.BHConfig.BlockC, config.BHConfig.InsertHook)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	logger := utils.Logger().With().Str("module", "StagedStreamSync").Uint32("ShardID", bc.ShardID()).Logger()
 
-	status := newStatus()
-	stagedSyncInstance, err := CreateStagedSync(bc, true, sp, status, config, logger, true) //TODO: move logProgress to configs
+	//TODO: use mem db should be in config file
+	stagedSyncInstance, err := CreateStagedSync(bc, true, sp, config, logger, true) //TODO: move logProgress to configs
 	if err != nil {
 		return nil
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Downloader{
 		bc:                 bc,
@@ -200,9 +200,7 @@ func (d *Downloader) loop() {
 			go trigger()
 
 		case <-d.downloadC:
-			//addedBN, err := d.doDownload(initSync)
-			//headBeforeSync := d.bc.CurrentBlock().NumberU64()
-			err := d.stagedSyncInstance.doSync(initSync)
+			addedBN, err := d.stagedSyncInstance.doSync(d.ctx, initSync)
 			if err != nil {
 				// If error happens, sleep 5 seconds and retry
 				d.logger.Warn().Err(err).Bool("bootstrap", initSync).Msg("failed to download")
@@ -213,7 +211,6 @@ func (d *Downloader) loop() {
 				time.Sleep(1 * time.Second)
 				continue
 			}
-			addedBN := d.stagedSyncInstance.inserted // d.bc.CurrentBlock().NumberU64() - headBeforeSync
 			d.logger.Info().Int("block added", addedBN).
 				Uint64("current height", d.bc.CurrentBlock().NumberU64()).
 				Bool("initSync", initSync).

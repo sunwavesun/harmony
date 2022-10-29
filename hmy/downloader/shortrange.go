@@ -20,7 +20,7 @@ import (
 // doShortRangeSync does the short range sync.
 // Compared with long range sync, short range sync is more focused on syncing to the latest block.
 // It consist of 3 steps:
-// 1. Obtain the block hashes and ompute the longest hash chain..
+// 1. Obtain the block hashes and compute the longest hash chain..
 // 2. Get blocks by hashes from computed hash chain.
 // 3. Insert the blocks to blockchain.
 func (d *Downloader) doShortRangeSync() (int, error) {
@@ -51,7 +51,6 @@ func (d *Downloader) doShortRangeSync() (int, error) {
 		// short circuit for no sync is needed
 		return 0, nil
 	}
-
 	expEndBN := curBN + uint64(len(hashChain))
 	d.logger.Info().Uint64("current number", curBN).
 		Uint64("target number", expEndBN).
@@ -73,7 +72,6 @@ func (d *Downloader) doShortRangeSync() (int, error) {
 		return 0, errors.Wrap(err, "getBlocksByHashes")
 	}
 	d.logger.Info().Int("num blocks", len(blocks)).Msg("getBlockByHashes result")
-
 	n, err := verifyAndInsertBlocks(d.bc, blocks)
 	numBlocksInsertedShortRangeHistogramVec.With(d.promLabels()).Observe(float64(n))
 	if err != nil {

@@ -35,6 +35,10 @@ func NewStageEpochCfg(ctx context.Context, bc core.BlockChain, db kv.RwDB) Stage
 	}
 }
 
+func (sr *StageEpoch) SetStageContext(ctx context.Context) {
+	sr.configs.ctx = ctx
+}
+
 func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) error {
 
 	// no need to update target if we are redoing the stages because of bad block
@@ -51,10 +55,10 @@ func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 	}
 
 	// doShortRangeSyncForEpochSync
-	if n, err := sr.doShortRangeSyncForEpochSync(s); err != nil {
+	n, err := sr.doShortRangeSyncForEpochSync(s)
+	s.state.inserted = n
+	if err != nil {
 		return err
-	} else {
-		s.state.inserted = n
 	}
 
 	useInternalTx := tx == nil
@@ -77,12 +81,13 @@ func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 }
 
 func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
-	//TODO:
-	//numShortRangeCounterVec.With(d.promLabels()).Inc()
+
+	numShortRangeCounterVec.With(s.state.promLabels()).Inc()
 
 	srCtx, cancel := context.WithTimeout(s.state.ctx, shortRangeTimeout)
 	defer cancel()
 
+	//TODO: merge srHelper with StageEpochConfig
 	sh := &srHelper{
 		syncProtocol: s.state.protocol,
 		ctx:          srCtx,
@@ -107,7 +112,6 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 	if len(bns) == 0 {
 		return 0, nil
 	}
-
 	blocks, streamID, err := sh.getBlocksChain(bns)
 	if err != nil {
 		return 0, errors.Wrap(err, "getHashChain")

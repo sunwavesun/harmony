@@ -34,6 +34,10 @@ func NewStageShortRangeCfg(ctx context.Context, bc core.BlockChain, db kv.RwDB) 
 	}
 }
 
+func (sr *StageShortRange) SetStageContext(ctx context.Context) {
+	sr.configs.ctx = ctx
+}
+
 func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) error {
 
 	// no need to update target if we are redoing the stages because of bad block
@@ -51,10 +55,10 @@ func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *Sta
 	}
 
 	// doShortRangeSyncForEpochSync
-	if n, err := sr.doShortRangeSync(s); err != nil {
+	n, err := sr.doShortRangeSync(s)
+	s.state.inserted = n
+	if err != nil {
 		return err
-	} else {
-		s.state.inserted = n
 	}
 
 	useInternalTx := tx == nil
