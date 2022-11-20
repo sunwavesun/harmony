@@ -2,10 +2,10 @@ package stagedstreamsync
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/internal/utils"
-	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
 	"github.com/harmony-one/harmony/shard"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/pkg/errors"
@@ -54,6 +54,8 @@ func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 		return nil
 	}
 
+	otherEpoch := shard.Schedule.CalcEpochNumber(s.state.status.targetBN).Uint64()
+	fmt.Println("--------------> STREAM EPOCH SYNC target block:", s.state.status.targetBN, "   target epoch:", otherEpoch)
 	// doShortRangeSyncForEpochSync
 	n, err := sr.doShortRangeSyncForEpochSync(s)
 	s.state.inserted = n
@@ -82,25 +84,33 @@ func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 
 func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 
+	fmt.Println("EPOCH SYNC START -------------------> shard: ", s.state.bc.ShardID())
+	fmt.Println("EPOCH SYNC START -------------------> shard: ", sr.configs.bc.ShardID())
+
 	numShortRangeCounterVec.With(s.state.promLabels()).Inc()
 
 	srCtx, cancel := context.WithTimeout(s.state.ctx, shortRangeTimeout)
 	defer cancel()
 
+	fmt.Println("EPOCH SYNC ----------> NUM STREAMS: ", s.state.protocol.NumStreams())
 	//TODO: merge srHelper with StageEpochConfig
 	sh := &srHelper{
 		syncProtocol: s.state.protocol,
 		ctx:          srCtx,
 		config:       s.state.config,
-		logger:       utils.Logger().With().Str("mode", "short range").Logger(),
+		logger:       utils.Logger().With().Str("mode", "epoch chain short range").Logger(),
 	}
 
 	if err := sh.checkPrerequisites(); err != nil {
+		fmt.Println("EPOCH SYNC ----------> checkPrerequisites error:", err)
 		return 0, errors.Wrap(err, "prerequisite")
 	}
 	curBN := s.state.bc.CurrentBlock().NumberU64()
 	bns := make([]uint64, 0, numBlocksByNumPerRequest)
-	loopEpoch := s.state.bc.CurrentHeader().Epoch().Uint64() //+ 1
+	// in epoch chain, we have only the last block of each epoch, so, the current 
+	// block's epoch number shows the last epoch we have. We should start
+	// from next epoch then
+	loopEpoch := s.state.bc.CurrentHeader().Epoch().Uint64() + 1
 	for len(bns) < numBlocksByNumPerRequest {
 		blockNum := shard.Schedule.EpochLastBlock(loopEpoch)
 		if blockNum > curBN {
@@ -109,25 +119,56 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 		loopEpoch = loopEpoch + 1
 	}
 
+	fmt.Println("EPOCH SYNC ----------> epoch:", loopEpoch, "added blocks:", bns)
+
 	if len(bns) == 0 {
 		return 0, nil
 	}
-	blocks, streamID, err := sh.getBlocksChain(bns)
+
+	////////////////////////////////////////////////////////
+	hashChain, whitelist, err := sh.getHashChain(bns)
 	if err != nil {
+		fmt.Println("EPOCH getHashChain error -------------->", err)
 		return 0, errors.Wrap(err, "getHashChain")
 	}
+	if len(hashChain) == 0 {
+		fmt.Println("EPOCH getHashChain 0 --------------> 0")
+
+		// short circuit for no sync is needed
+		return 0, nil
+	}
+	blocks, streamID, err := sh.getBlocksByHashes(hashChain, whitelist)
+	if err != nil {
+		fmt.Println("EPOCH SYNC ----------> get block by hashes error:", err)
+		utils.Logger().Warn().Err(err).Msg("epoch sync getBlocksByHashes failed")
+		if !errors.Is(err, context.Canceled) {
+			sh.removeStreams(whitelist) // Remote nodes cannot provide blocks with target hashes
+		}
+		return 0, errors.Wrap(err, "epoch sync getBlocksByHashes")
+	}
+	///////////////////////////////////////////////////////
+	// blocks, streamID, err := sh.getBlocksChain(bns)
+	// if err != nil {
+	// 	fmt.Println("EPOCH SYNC ----------> get block chains error:",err)
+	// 	return 0, errors.Wrap(err, "getHashChain")
+	// }
+	///////////////////////////////////////////////////////
+	fmt.Println("EPOCH SYNC ----------> get blocks len:", len(blocks))
 	if len(blocks) == 0 {
 		// short circuit for no sync is needed
 		return 0, nil
 	}
+	fmt.Println("EPOCH SYNC ----------> insert: ", len(blocks))
+
 	n, err := s.state.bc.InsertChain(blocks, true)
 	numBlocksInsertedShortRangeHistogramVec.With(s.state.promLabels()).Observe(float64(n))
 	if err != nil {
-		sh.removeStreams([]sttypes.StreamID{streamID}) // Data provided by remote nodes is corrupted
+		fmt.Println("EPOCH SYNC ----------> insert error: ", err, "remove stream:", streamID)
+		sh.removeStreams(streamID) // Data provided by remote nodes is corrupted
 		return n, err
 	}
 	utils.Logger().Info().Err(err).Int("blocks inserted", n).Msg("Insert block success")
-
+	fmt.Println("EPOCH SYNC ----------> inserted successfully: ", len(blocks))
 	return len(blocks), nil
 }
 

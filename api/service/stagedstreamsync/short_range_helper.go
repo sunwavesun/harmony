@@ -2,6 +2,7 @@ package stagedstreamsync
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -32,7 +33,9 @@ func (sh *srHelper) getHashChain(bns []uint64) ([]common.Hash, []sttypes.StreamI
 			defer wg.Done()
 
 			hashes, stid, err := sh.doGetBlockHashesRequest(bns)
+			fmt.Println("HASH REQ-----------------------> len:", len(hashes))
 			if err != nil {
+				fmt.Println("HASH REQ ERR----------------------->", err)
 				sh.logger.Warn().Err(err).Str("StreamID", string(stid)).
 					Msg("doGetBlockHashes return error")
 				return
@@ -143,10 +146,15 @@ func (sh *srHelper) checkPrerequisites() error {
 	return nil
 }
 
-func (sh *srHelper) prepareBlockHashNumbers(curNumber uint64) []uint64 {
-	res := make([]uint64, 0, numBlockHashesPerRequest)
+func (sh *srHelper) prepareBlockHashNumbers(curNumber uint64, count int) []uint64 {
 
-	for bn := curNumber + 1; bn <= curNumber+uint64(numBlockHashesPerRequest); bn++ {
+	n := count
+	if count > numBlockHashesPerRequest {
+		n = numBlockHashesPerRequest
+	}
+	res := make([]uint64, 0, n)
+
+	for bn := curNumber + 1; bn <= curNumber+uint64(n); bn++ {
 		res = append(res, bn)
 	}
 	return res
@@ -171,10 +179,10 @@ func (sh *srHelper) doGetBlockHashesRequest(bns []uint64) ([]common.Hash, sttype
 }
 
 func (sh *srHelper) doGetBlocksByNumbersRequest(bns []uint64) ([]*types.Block, sttypes.StreamID, error) {
-	ctx, cancel := context.WithTimeout(sh.ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(sh.ctx, 10*time.Second)
 	defer cancel()
 
-	blocks, stid, err := sh.syncProtocol.GetBlocksByNumber(ctx, bns)
+	blocks, stid, err := sh.syncProtocol.GetBlocksByNumber(ctx, "sss.short_range_helper.doGetBlocksByNumbersRequest", bns)
 	if err != nil {
 		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to doGetBlockHashesRequest")
 		return nil, stid, err

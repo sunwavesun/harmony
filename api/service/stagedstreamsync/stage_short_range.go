@@ -2,6 +2,7 @@ package stagedstreamsync
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/internal/utils"
@@ -54,7 +55,14 @@ func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *Sta
 		return nil
 	}
 
-	// doShortRangeSyncForEpochSync
+	curBN := sr.configs.bc.CurrentBlock().NumberU64()
+	if curBN >= s.state.status.targetBN {
+		return nil
+	}
+
+	fmt.Println("SHORT RANGE SYNC ----------> NUM STREAMS: ", s.state.protocol.NumStreams())
+
+	// do short range sync
 	n, err := sr.doShortRangeSync(s)
 	s.state.inserted = n
 	if err != nil {
@@ -90,6 +98,9 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 
 	numShortRangeCounterVec.With(s.state.promLabels()).Inc()
 
+	fmt.Println("SHORT RANGE START -------------------> shard: ", s.state.bc.ShardID())
+	fmt.Println("SHORT RANGE START -------------------> shard: ", sr.configs.bc.ShardID())
+
 	srCtx, cancel := context.WithTimeout(s.state.ctx, shortRangeTimeout)
 	defer cancel()
 
@@ -103,8 +114,10 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 	if err := sh.checkPrerequisites(); err != nil {
 		return 0, errors.Wrap(err, "prerequisite")
 	}
-	curBN := s.state.bc.CurrentBlock().NumberU64()
-	hashChain, whitelist, err := sh.getHashChain(sh.prepareBlockHashNumbers(curBN))
+	curBN := sr.configs.bc.CurrentBlock().NumberU64()
+	blkCount := int(s.state.status.targetBN) - int(curBN)
+	blkNums := sh.prepareBlockHashNumbers(curBN, blkCount)
+	hashChain, whitelist, err := sh.getHashChain(blkNums)
 	if err != nil {
 		return 0, errors.Wrap(err, "getHashChain")
 	}
@@ -119,8 +132,10 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 		Uint64("target number", expEndBN).
 		Interface("hashChain", hashChain).
 		Msg("short range start syncing")
-	s.state.status.startSyncing()
+
 	s.state.status.setTargetBN(expEndBN)
+
+	s.state.status.startSyncing()
 	defer func() {
 		utils.Logger().Info().Msg("short range finished syncing")
 		s.state.status.finishSyncing()
@@ -137,7 +152,7 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 
 	utils.Logger().Info().Int("num blocks", len(blocks)).Msg("getBlockByHashes result")
 
-	n, err := verifyAndInsertBlocks(s.state.bc, blocks)
+	n, err := verifyAndInsertBlocks(sr.configs.bc, blocks)
 	numBlocksInsertedShortRangeHistogramVec.With(s.state.promLabels()).Observe(float64(n))
 	if err != nil {
 		utils.Logger().Warn().Err(err).Int("blocks inserted", n).Msg("Insert block failed")

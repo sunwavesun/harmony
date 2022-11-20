@@ -18,6 +18,7 @@ import (
 	"github.com/harmony-one/harmony/p2p"
 	"github.com/harmony-one/harmony/p2p/stream/common/streammanager"
 	"github.com/harmony-one/harmony/p2p/stream/protocols/sync"
+	"github.com/harmony-one/harmony/shard"
 )
 
 type (
@@ -54,22 +55,24 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 		SmHiCap:      config.SmHiCap,
 		DiscBatch:    config.SmDiscBatch,
 	})
+	fmt.Println("======[SHARD:", bc.ShardID(), "]=========----> MY PROTOID: ", sp.ProtoID(), " ID:", host.GetID(), "===================")
+
 	host.AddStreamProtocol(sp)
 
 	var bh *beaconHelper
-	if config.BHConfig != nil && bc.ShardID() == 0 {
+	if config.BHConfig != nil && bc.ShardID() == shard.BeaconChainShardID {
 		bh = newBeaconHelper(bc, config.BHConfig.BlockC, config.BHConfig.InsertHook)
 	}
 
 	logger := utils.Logger().With().Str("module", "StagedStreamSync").Uint32("ShardID", bc.ShardID()).Logger()
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	//TODO: use mem db should be in config file
-	stagedSyncInstance, err := CreateStagedSync(bc, true, sp, config, logger, true) //TODO: move logProgress to configs
+	stagedSyncInstance, err := CreateStagedSync(ctx, bc, false, sp, config, logger, true) //TODO: move logProgress to configs
 	if err != nil {
 		return nil
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Downloader{
 		bc:                 bc,
@@ -90,7 +93,10 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 // Start start the downloader
 func (d *Downloader) Start() {
 	go func() {
+		//if d.syncProtocol.NumStreams() < d.config.InitStreams {
 		d.waitForBootFinish()
+		fmt.Println("BOOT--------$$$$$$$[shard:", d.bc.ShardID(), "]$$$$$$$$$$$$$$------> DONE")
+		//}
 		d.loop()
 	}()
 

@@ -67,7 +67,6 @@ type Timing struct {
 
 type SyncCycle struct {
 	Number       uint64
-	StartHash    []byte
 	TargetHeight uint64
 	lock         sync.RWMutex
 }
@@ -222,6 +221,8 @@ func New(ctx context.Context,
 	config Config,
 	logger zerolog.Logger,
 ) *StagedStreamSync {
+
+	fmt.Println("NEW STREAM SYNC ---------------> shard id: ", bc.ShardID())
 
 	revertStages := make([]*Stage, len(stagesList))
 	for i, stageIndex := range DefaultRevertOrder {

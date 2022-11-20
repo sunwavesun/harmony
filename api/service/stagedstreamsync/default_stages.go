@@ -38,8 +38,8 @@ var DefaultCleanUpOrder = CleanUpOrder{
 
 func DefaultStages(ctx context.Context,
 	headsCfg StageHeadsCfg,
-	srCfg StageShortRangeCfg,
 	seCfg StageEpochCfg,
+	srCfg StageShortRangeCfg,
 	bodiesCfg StageBodiesCfg,
 	statesCfg StageStatesCfg,
 	finishCfg StageFinishCfg,

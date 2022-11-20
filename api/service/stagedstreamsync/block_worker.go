@@ -56,7 +56,7 @@ func (w *getBlocksWorker) doBatch(bns []uint64) ([]*types.Block, sttypes.StreamI
 	ctx, cancel := context.WithTimeout(w.ctx, 10*time.Second)
 	defer cancel()
 
-	blocks, stid, err := w.protocol.GetBlocksByNumber(ctx, bns)
+	blocks, stid, err := w.protocol.GetBlocksByNumber(ctx, "sss.block_worker.doBatch", bns)
 	if err != nil {
 		return nil, stid, err
 	}

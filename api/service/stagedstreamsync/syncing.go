@@ -40,7 +40,8 @@ var Buckets = []string{
 }
 
 // CreateStagedSync creates an instance of staged sync
-func CreateStagedSync(bc core.BlockChain,
+func CreateStagedSync(ctx context.Context,
+	bc core.BlockChain,
 	UseMemDB bool,
 	protocol syncProtocol,
 	config Config,
@@ -61,8 +62,6 @@ func CreateStagedSync(bc core.BlockChain,
 		}
 	}
 
-	ctx := context.Background()
-
 	if errInitDB := initDB(ctx, db); errInitDB != nil {
 		return nil, errInitDB
 	}
@@ -76,8 +75,8 @@ func CreateStagedSync(bc core.BlockChain,
 
 	stages := DefaultStages(ctx,
 		stageHeadsCfg,
-		stageShortRangeCfg,
 		stageSyncEpochCfg,
+		stageShortRangeCfg,
 		stageBodiesCfg,
 		stageStatesCfg,
 		stageFinishCfg,
@@ -107,10 +106,10 @@ func initDB(ctx context.Context, db kv.RwDB) error {
 		if err := tx.CreateBucket(GetStageName(name, false, false)); err != nil {
 			return err
 		}
-		// create bucket for beacon
-		if err := tx.CreateBucket(GetStageName(name, true, false)); err != nil {
-			return err
-		}
+		// // create bucket for beacon
+		// if err := tx.CreateBucket(GetStageName(name, true, false)); err != nil {
+		// 	return err
+		// }
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -140,7 +139,7 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 			//TODO: use directly currentCycle var
 			s.status.setTargetBN(estimatedHeight)
 		}
-
+		fmt.Println("estimated current number -----------[shard: ", s.bc.ShardID(), "]--------->", estimatedHeight)
 		if curBN := s.bc.CurrentBlock().NumberU64(); estimatedHeight <= curBN {
 			s.logger.Info().Uint64("current number", curBN).Uint64("target number", estimatedHeight).
 				Msg("early return of long range sync")
@@ -161,6 +160,7 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 		s.ctx = ctx
 		s.SetNewContext(ctx)
 
+		fmt.Println("Cycle --[shard:",s.bc.ShardID(),"]--------->", s.currentCycle.Number)
 		n, err := s.doSyncCycle(ctx, initSync)
 		if err != nil {
 			pl := s.promLabels()
@@ -209,6 +209,7 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 	// Do one cycle of staged sync
 	initialCycle := s.currentCycle.Number == 0
 	if err := s.Run(s.DB(), tx, initialCycle); err != nil {
+		fmt.Println("CYCLE ERROR----->", err)
 		// cancel()
 		utils.Logger().Error().
 			Err(err).
