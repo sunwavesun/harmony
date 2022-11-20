@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/harmony-one/harmony/consensus/engine"
+	"github.com/harmony-one/harmony/core"
 	nodeconfig "github.com/harmony-one/harmony/internal/configs/node"
 	shardingconfig "github.com/harmony-one/harmony/internal/configs/sharding"
 	"github.com/harmony-one/harmony/internal/utils"
@@ -15,6 +16,7 @@ import (
 	"github.com/harmony-one/harmony/p2p/stream/common/requestmanager"
 	"github.com/harmony-one/harmony/p2p/stream/common/streammanager"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
+	"github.com/harmony-one/harmony/shard"
 	"github.com/hashicorp/go-version"
 	libp2p_host "github.com/libp2p/go-libp2p-core/host"
 	libp2p_network "github.com/libp2p/go-libp2p-core/network"
@@ -39,12 +41,13 @@ var (
 type (
 	// Protocol is the protocol for sync streaming
 	Protocol struct {
-		chain    engine.ChainReader            // provide SYNC data
-		schedule shardingconfig.Schedule       // provide schedule information
-		rl       ratelimiter.RateLimiter       // limit the incoming request rate
-		sm       streammanager.StreamManager   // stream management
-		rm       requestmanager.RequestManager // deliver the response from stream
-		disc     discovery.Discovery
+		chain      engine.ChainReader            // provide SYNC data
+		beaconNode bool                          // is beacon node or shard chain node
+		schedule   shardingconfig.Schedule       // provide schedule information
+		rl         ratelimiter.RateLimiter       // limit the incoming request rate
+		sm         streammanager.StreamManager   // stream management
+		rm         requestmanager.RequestManager // deliver the response from stream
+		disc       discovery.Discovery
 
 		config Config
 		logger zerolog.Logger
@@ -74,13 +77,18 @@ type (
 func NewProtocol(config Config) *Protocol {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	isBeaconNode := config.Chain.ShardID() == shard.BeaconChainShardID
+	if _, ok := config.Chain.(*core.EpochChain); ok {
+		isBeaconNode = false
+	}
 	sp := &Protocol{
-		chain:  config.Chain,
-		disc:   config.Discovery,
-		config: config,
-		ctx:    ctx,
-		cancel: cancel,
-		closeC: make(chan struct{}),
+		chain:      config.Chain,
+		beaconNode: isBeaconNode,
+		disc:       config.Discovery,
+		config:     config,
+		ctx:        ctx,
+		cancel:     cancel,
+		closeC:     make(chan struct{}),
 	}
 	smConfig := streammanager.Config{
 		SoftLoCap: config.SmSoftLowCap,
@@ -219,18 +227,22 @@ func (p *Protocol) protoIDByVersion(v *version.Version) sttypes.ProtoID {
 		NetworkType: p.config.Network,
 		ShardID:     p.config.ShardID,
 		Version:     v,
+		BeaconNode:  p.beaconNode,
 	}
 	return spec.ToProtoID()
 }
 
 // RemoveStream removes the stream of the given stream ID
+// TODO: add reason to parameters
 func (p *Protocol) RemoveStream(stID sttypes.StreamID) {
 	if stID == "" {
 		return
 	}
 	st, exist := p.sm.GetStreamByID(stID)
 	if exist && st != nil {
+		//TODO: log this incident with reason
 		st.Close()
+		//TODO: do we need to do this  as well? p.sm.RemoveStream(stID)
 	}
 }
 

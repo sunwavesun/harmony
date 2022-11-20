@@ -10,6 +10,7 @@ import (
 	"github.com/harmony-one/abool"
 	"github.com/harmony-one/harmony/internal/utils"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
+	"github.com/harmony-one/harmony/shard"
 	"github.com/libp2p/go-libp2p-core/network"
 	libp2p_peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -233,6 +234,9 @@ func (sm *streamManager) sanityCheckStream(st sttypes.Stream) error {
 	}
 	if mySpec.ShardID != rmSpec.ShardID {
 		return fmt.Errorf("unexpected shard ID: %v/%v", rmSpec.ShardID, mySpec.ShardID)
+	}
+	if mySpec.ShardID == shard.BeaconChainShardID && !rmSpec.BeaconNode {
+		return fmt.Errorf("unexpected beacon node with shard ID: %v/%v", rmSpec.ShardID, mySpec.ShardID)
 	}
 	return nil
 }
