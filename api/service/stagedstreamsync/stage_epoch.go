@@ -107,7 +107,7 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 	}
 	curBN := s.state.bc.CurrentBlock().NumberU64()
 	bns := make([]uint64, 0, numBlocksByNumPerRequest)
-	// in epoch chain, we have only the last block of each epoch, so, the current 
+	// in epoch chain, we have only the last block of each epoch, so, the current
 	// block's epoch number shows the last epoch we have. We should start
 	// from next epoch then
 	loopEpoch := s.state.bc.CurrentHeader().Epoch().Uint64() + 1

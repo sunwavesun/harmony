@@ -160,7 +160,7 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 		s.ctx = ctx
 		s.SetNewContext(ctx)
 
-		fmt.Println("Cycle --[shard:",s.bc.ShardID(),"]--------->", s.currentCycle.Number)
+		fmt.Println("Cycle --[shard:", s.bc.ShardID(), "]--------->", s.currentCycle.Number)
 		n, err := s.doSyncCycle(ctx, initSync)
 		if err != nil {
 			pl := s.promLabels()
