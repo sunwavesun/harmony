@@ -182,7 +182,7 @@ func (sh *srHelper) doGetBlocksByNumbersRequest(bns []uint64) ([]*types.Block, s
 	ctx, cancel := context.WithTimeout(sh.ctx, 10*time.Second)
 	defer cancel()
 
-	blocks, stid, err := sh.syncProtocol.GetBlocksByNumber(ctx, "sss.short_range_helper.doGetBlocksByNumbersRequest", bns)
+	blocks, stid, err := sh.syncProtocol.GetBlocksByNumber(ctx, bns)
 	if err != nil {
 		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to doGetBlockHashesRequest")
 		return nil, stid, err

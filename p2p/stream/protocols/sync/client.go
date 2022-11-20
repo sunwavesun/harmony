@@ -145,7 +145,7 @@ func (req *getBlocksByNumberRequest) Encode() ([]byte, error) {
 	return protobuf.Marshal(msg)
 }
 
-func (req *getBlocksByNumberRequest) getBlocksFromResponse(resp sttypes.Response, sid uint32) ([]*types.Block, error) {
+func (req *getBlocksByNumberRequest) getBlocksFromResponse(resp sttypes.Response) ([]*types.Block, error) {
 	sResp, ok := resp.(*syncResponse)
 	if !ok || sResp == nil {
 		return nil, errors.New("not sync response")
