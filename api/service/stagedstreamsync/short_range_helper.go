@@ -2,7 +2,6 @@ package stagedstreamsync
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -33,9 +32,7 @@ func (sh *srHelper) getHashChain(bns []uint64) ([]common.Hash, []sttypes.StreamI
 			defer wg.Done()
 
 			hashes, stid, err := sh.doGetBlockHashesRequest(bns)
-			fmt.Println("HASH REQ-----------------------> len:", len(hashes))
 			if err != nil {
-				fmt.Println("HASH REQ ERR----------------------->", err)
 				sh.logger.Warn().Err(err).Str("StreamID", string(stid)).
 					Msg("doGetBlockHashes return error")
 				return
@@ -149,8 +146,8 @@ func (sh *srHelper) checkPrerequisites() error {
 func (sh *srHelper) prepareBlockHashNumbers(curNumber uint64, count int) []uint64 {
 
 	n := count
-	if count > numBlockHashesPerRequest {
-		n = numBlockHashesPerRequest
+	if count > BlockHashesPerRequest {
+		n = BlockHashesPerRequest
 	}
 	res := make([]uint64, 0, n)
 

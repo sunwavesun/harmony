@@ -54,11 +54,11 @@ func (m *getBlocksByHashManager) getNextHashes() ([]common.Hash, []sttypes.Strea
 
 func (m *getBlocksByHashManager) numBlocksPerRequest() int {
 	val := divideCeil(len(m.hashes), len(m.whitelist))
-	if val < numBlocksByHashesLowerCap {
-		val = numBlocksByHashesLowerCap
+	if val < BlockByHashesLowerCap {
+		val = BlockByHashesLowerCap
 	}
-	if val > numBlocksByHashesUpperCap {
-		val = numBlocksByHashesUpperCap
+	if val > BlockByHashesUpperCap {
+		val = BlockByHashesUpperCap
 	}
 	return val
 }

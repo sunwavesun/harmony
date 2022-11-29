@@ -8,25 +8,24 @@ import (
 )
 
 const (
-	numBlocksByNumPerRequest int = 10 // number of blocks for each request
-	blocksPerInsert          int = 50 // number of blocks for each insert batch
+	BlocksPerRequest      int = 10 // number of blocks for each request
+	BlocksPerInsertion    int = 50 // number of blocks for each insert batch
+	BlockHashesPerRequest int = 20 // number of get block hashes for short range sync
+	BlockByHashesUpperCap int = 10 // number of get blocks by hashes upper cap
+	BlockByHashesLowerCap int = 3  // number of get blocks by hashes lower cap
 
-	numBlockHashesPerRequest  int = 20 // number of get block hashes for short range sync
-	numBlocksByHashesUpperCap int = 10 // number of get blocks by hashes upper cap
-	numBlocksByHashesLowerCap int = 3  // number of get blocks by hashes lower cap
-
-	lastMileThres int = 10
+	LastMileBlocksThreshold int = 10
 
 	// soft cap of size in resultQueue. When the queue size is larger than this limit,
 	// no more request will be assigned to workers to wait for InsertChain to finish.
-	softQueueCap int = 100
+	SoftQueueCap int = 100
 
-	// defaultConcurrency is the default settings for concurrency
-	defaultConcurrency = 4
+	// DefaultConcurrency is the default settings for concurrency
+	DefaultConcurrency = 4
 
-	// shortRangeTimeout is the timeout for each short range sync, which allow short range sync
+	// ShortRangeTimeout is the timeout for each short range sync, which allow short range sync
 	// to restart automatically when stuck in `getBlockHashes`
-	shortRangeTimeout = 1 * time.Minute
+	ShortRangeTimeout = 1 * time.Minute
 )
 
 type (
@@ -62,7 +61,7 @@ type (
 
 func (c *Config) fixValues() {
 	if c.Concurrency == 0 {
-		c.Concurrency = defaultConcurrency
+		c.Concurrency = DefaultConcurrency
 	}
 	if c.Concurrency > c.MinStreams {
 		c.MinStreams = c.Concurrency

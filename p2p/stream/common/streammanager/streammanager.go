@@ -74,6 +74,8 @@ func newStreamManager(pid sttypes.ProtoID, host host, pf peerFinder, handleStrea
 
 	protoSpec, _ := sttypes.ProtoIDToProtoSpec(pid)
 
+	fmt.Println("my peer id: ", host.ID().String())
+	fmt.Println("my proto id: ", pid)
 	return &streamManager{
 		myProtoID:     pid,
 		myProtoSpec:   protoSpec,

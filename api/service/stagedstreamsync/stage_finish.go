@@ -64,10 +64,8 @@ func (bh *StageFinish) clearBucket(tx kv.RwTx, isBeacon bool) error {
 		}
 		defer tx.Rollback()
 	}
-	bucketName := GetBucketName(BlockHashesBucket, isBeacon)
-	if err := tx.ClearBucket(bucketName); err != nil {
-		return err
-	}
+
+	
 
 	if useInternalTx {
 		if err := tx.Commit(); err != nil {

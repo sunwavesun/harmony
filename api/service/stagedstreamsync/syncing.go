@@ -18,12 +18,13 @@ import (
 )
 
 const (
-	BlockHashesBucket            = "BlockHashes"
-	BeaconBlockHashesBucket      = "BeaconBlockHashes"
-	DownloadedBlocksBucket       = "BlockBodies"
-	BeaconDownloadedBlocksBucket = "BeaconBlockBodies" // Beacon Block bodies are downloaded, TxHash and UncleHash are getting verified
-	LastMileBlocksBucket         = "LastMileBlocks"    // last mile blocks to catch up with the consensus
-	StageProgressBucket          = "StageProgress"
+	BlocksBucket          = "BlockBodies"
+	BlockSignaturesBucket = "BlockSignatures"
+	StageProgressBucket   = "StageProgress"
+	// BlockHashesBucket               = "BlockHashes"
+	// BeaconBlockHashesBucket         = "BeaconBlockHashes"
+	// BeaconDownloadedBlocksBucket    = "BeaconBlockBodies" // Beacon Block bodies are downloaded, TxHash and UncleHash are getting verified
+	// LastMileBlocksBucket            = "LastMileBlocks"    // last mile blocks to catch up with the consensus
 
 	// cache db keys
 	LastBlockHeight = "LastBlockHeight"
@@ -31,11 +32,12 @@ const (
 )
 
 var Buckets = []string{
-	BlockHashesBucket,
-	BeaconBlockHashesBucket,
-	DownloadedBlocksBucket,
-	BeaconDownloadedBlocksBucket,
-	LastMileBlocksBucket,
+	//BlockHashesBucket,
+	//BeaconBlockHashesBucket,
+	// BeaconDownloadedBlocksBucket,
+	// LastMileBlocksBucket,
+	BlocksBucket,
+	BlockSignaturesBucket,
 	StageProgressBucket,
 }
 
@@ -51,27 +53,31 @@ func CreateStagedSync(ctx context.Context,
 
 	isBeacon := bc.ShardID() == bc.Engine().Beaconchain().ShardID()
 
-	var db kv.RwDB
+	var mainDB kv.RwDB
+	dbs := make([]kv.RwDB, config.Concurrency)
 	if UseMemDB {
-		db = memdb.New()
+		mainDB = memdb.New()
+		for i := 0; i < config.Concurrency; i++ {
+			dbs[i] = memdb.New()
+		}
 	} else {
-		if isBeacon {
-			db = mdbx.NewMDBX(log.New()).Path("cache_beacon_db").MustOpen()
-		} else {
-			db = mdbx.NewMDBX(log.New()).Path("cache_shard_db").MustOpen()
+		mainDB = mdbx.NewMDBX(log.New()).Path(GetBlockDbPath(isBeacon, -1)).MustOpen()
+		for i := 0; i < config.Concurrency; i++ {
+			dbPath := GetBlockDbPath(isBeacon, i)
+			dbs[i] = mdbx.NewMDBX(log.New()).Path(dbPath).MustOpen()
 		}
 	}
 
-	if errInitDB := initDB(ctx, db); errInitDB != nil {
+	if errInitDB := initDB(ctx, mainDB, dbs, config.Concurrency); errInitDB != nil {
 		return nil, errInitDB
 	}
 
-	stageHeadsCfg := NewStageHeadersCfg(ctx, bc, db)
-	stageShortRangeCfg := NewStageShortRangeCfg(ctx, bc, db)
-	stageSyncEpochCfg := NewStageEpochCfg(ctx, bc, db)
-	stageBodiesCfg := NewStageBodiesCfg(ctx, bc, db, isBeacon, logProgress)
-	stageStatesCfg := NewStageStatesCfg(ctx, bc, db, logger, logProgress)
-	stageFinishCfg := NewStageFinishCfg(ctx, db)
+	stageHeadsCfg := NewStageHeadersCfg(ctx, bc, mainDB)
+	stageShortRangeCfg := NewStageShortRangeCfg(ctx, bc, mainDB)
+	stageSyncEpochCfg := NewStageEpochCfg(ctx, bc, mainDB)
+	stageBodiesCfg := NewStageBodiesCfg(ctx, bc, mainDB, dbs, config.Concurrency, protocol, isBeacon, logProgress)
+	stageStatesCfg := NewStageStatesCfg(ctx, bc, mainDB, dbs, config.Concurrency, logger, logProgress)
+	stageFinishCfg := NewStageFinishCfg(ctx, mainDB)
 
 	stages := DefaultStages(ctx,
 		stageHeadsCfg,
@@ -84,7 +90,7 @@ func CreateStagedSync(ctx context.Context,
 
 	return New(ctx,
 		bc,
-		db,
+		mainDB,
 		stages,
 		isBeacon,
 		protocol,
@@ -95,26 +101,60 @@ func CreateStagedSync(ctx context.Context,
 }
 
 // init sync loop main database and create buckets
-func initDB(ctx context.Context, db kv.RwDB) error {
-	tx, errRW := db.BeginRw(ctx)
+func initDB(ctx context.Context, mainDB kv.RwDB, dbs []kv.RwDB, concurrency int) error {
+
+	// create buckets for mainDB
+	tx, errRW := mainDB.BeginRw(ctx)
 	if errRW != nil {
 		return errRW
 	}
 	defer tx.Rollback()
+
 	for _, name := range Buckets {
-		// create bucket
 		if err := tx.CreateBucket(GetStageName(name, false, false)); err != nil {
 			return err
 		}
-		// // create bucket for beacon
-		// if err := tx.CreateBucket(GetStageName(name, true, false)); err != nil {
-		// 	return err
-		// }
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+
+	// create buckets for block cache DBs
+	for _, db := range dbs {
+		tx, errRW := db.BeginRw(ctx)
+		if errRW != nil {
+			return errRW
+		}
+
+		if err := tx.CreateBucket(BlocksBucket); err != nil {
+			return err
+		}
+		if err := tx.CreateBucket(BlockSignaturesBucket); err != nil {
+			return err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func GetBlockDbPath(beacon bool, loopID int) string {
+	if beacon {
+		if loopID >= 0 {
+			return fmt.Sprintf("%s_%d", "cache/beacon_blocks_db", loopID)
+		} else {
+			return "cache/beacon_blocks_db_main"
+		}
+	} else {
+		if loopID >= 0 {
+			return fmt.Sprintf("%s_%d", "cache/blocks_db", loopID)
+		} else {
+			return "cache/blocks_db_main"
+		}
+	}
 }
 
 // doSync does the long range sync.
@@ -125,6 +165,10 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 	var totalInserted int
 
 	s.initSync = initSync
+
+	defer func() {
+		fmt.Println("node is synchronized")
+	}()
 
 	if err := s.checkPrerequisites(); err != nil {
 		return 0, err
@@ -139,7 +183,6 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 			//TODO: use directly currentCycle var
 			s.status.setTargetBN(estimatedHeight)
 		}
-		fmt.Println("estimated current number -----------[shard: ", s.bc.ShardID(), "]--------->", estimatedHeight)
 		if curBN := s.bc.CurrentBlock().NumberU64(); estimatedHeight <= curBN {
 			s.logger.Info().Uint64("current number", curBN).Uint64("target number", estimatedHeight).
 				Msg("early return of long range sync")
@@ -160,7 +203,6 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 		s.ctx = ctx
 		s.SetNewContext(ctx)
 
-		fmt.Println("Cycle --[shard:", s.bc.ShardID(), "]--------->", s.currentCycle.Number)
 		n, err := s.doSyncCycle(ctx, initSync)
 		if err != nil {
 			pl := s.promLabels()
@@ -175,7 +217,7 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 		totalInserted += n
 
 		// if it's not long range sync, skip loop
-		if n < lastMileThres || !initSync {
+		if n < LastMileBlocksThreshold || !initSync {
 			return totalInserted, nil
 		}
 	}
@@ -209,7 +251,6 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 	// Do one cycle of staged sync
 	initialCycle := s.currentCycle.Number == 0
 	if err := s.Run(s.DB(), tx, initialCycle); err != nil {
-		fmt.Println("CYCLE ERROR----->", err)
 		// cancel()
 		utils.Logger().Error().
 			Err(err).
@@ -239,7 +280,7 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 		fmt.Println("sync speed:", syncSpeed, "blocks/s")
 	}
 
-	// if s.inserted < lastMileThres || !initSync {
+	// if s.inserted < LastMileBlocksThreshold || !initSync {
 	// 	return totalInserted, nil
 	// }
 	//}

@@ -42,6 +42,36 @@ func (p *Protocol) GetBlocksByNumber(ctx context.Context, bns []uint64, opts ...
 	return
 }
 
+func (p *Protocol) GetRawBlocksByNumber(ctx context.Context, bns []uint64, opts ...Option) (blockBytes [][]byte, sigBytes [][]byte, stid sttypes.StreamID, err error) {
+	timer := p.doMetricClientRequest("getBlocksByNumber")
+	defer p.doMetricPostClientRequest("getBlocksByNumber", err, timer)
+
+	if len(bns) == 0 {
+		err = fmt.Errorf("zero block numbers requested")
+		return
+	}
+	if len(bns) > GetBlocksByNumAmountCap {
+		err = fmt.Errorf("number of blocks exceed cap of %v", GetBlocksByNumAmountCap)
+		return
+	}
+	req := newGetBlocksByNumberRequest(bns)
+	resp, stid, err := p.rm.DoRequest(ctx, req, opts...)
+	if err != nil {
+		// At this point, error can be context canceled, context timed out, or waiting queue
+		// is already full.
+		return
+	}
+
+	// Parse and return blocks
+	sResp, ok := resp.(*syncResponse)
+	if !ok || sResp == nil {
+		err = errors.New("not sync response")
+		return
+	}
+	blockBytes, sigBytes, err = req.parseBlockBytesAndSigs(sResp)
+	return
+}
+
 // GetCurrentBlockNumber get the current block number from remote node
 func (p *Protocol) GetCurrentBlockNumber(ctx context.Context, opts ...Option) (bn uint64, stid sttypes.StreamID, err error) {
 	timer := p.doMetricClientRequest("getBlockNumber")
@@ -157,8 +187,7 @@ func (req *getBlocksByNumberRequest) getBlocksFromResponse(resp sttypes.Response
 	blocks := make([]*types.Block, 0, len(blockBytes))
 	for i, bb := range blockBytes {
 		var block *types.Block
-		var err error
-		if block, err = RlpDecodeBlockOrBlockWithSig(bb); err != nil {
+		if err := rlp.DecodeBytes(bb, &block); err != nil {
 			return nil, errors.Wrap(err, "[GetBlocksByNumResponse]")
 		}
 		if block != nil {
@@ -174,24 +203,6 @@ func (req *getBlocksByNumberRequest) getBlocksFromResponse(resp sttypes.Response
 type BlockWithSig struct {
 	Block              *types.Block
 	CommitSigAndBitmap []byte
-}
-
-// RlpDecodeBlockOrBlockWithSig decode payload to types.Block or BlockWithSig.
-// Return the block with commitSig if set.
-func RlpDecodeBlockOrBlockWithSig(payload []byte) (*types.Block, error) {
-	var block *types.Block
-	if err := rlp.DecodeBytes(payload, &block); err == nil {
-		// received payload as *types.Block
-		return block, nil
-	}
-
-	var bws BlockWithSig
-	if err := rlp.DecodeBytes(payload, &bws); err == nil {
-		block := bws.Block
-		block.SetCurrentCommitSig(bws.CommitSigAndBitmap)
-		return block, nil
-	}
-	return nil, errors.New("failed to decode to either types.Block or BlockWithSig")
 }
 
 func (req *getBlocksByNumberRequest) parseBlockBytesAndSigs(resp *syncResponse) ([][]byte, [][]byte, error) {

@@ -2,7 +2,6 @@ package stagedstreamsync
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/internal/utils"
@@ -60,8 +59,6 @@ func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *Sta
 		return nil
 	}
 
-	fmt.Println("SHORT RANGE SYNC ----------> NUM STREAMS: ", s.state.protocol.NumStreams())
-
 	// do short range sync
 	n, err := sr.doShortRangeSync(s)
 	s.state.inserted = n
@@ -98,10 +95,7 @@ func (sr *StageShortRange) doShortRangeSync(s *StageState) (int, error) {
 
 	numShortRangeCounterVec.With(s.state.promLabels()).Inc()
 
-	fmt.Println("SHORT RANGE START -------------------> shard: ", s.state.bc.ShardID())
-	fmt.Println("SHORT RANGE START -------------------> shard: ", sr.configs.bc.ShardID())
-
-	srCtx, cancel := context.WithTimeout(s.state.ctx, shortRangeTimeout)
+	srCtx, cancel := context.WithTimeout(s.state.ctx, ShortRangeTimeout)
 	defer cancel()
 
 	sh := &srHelper{

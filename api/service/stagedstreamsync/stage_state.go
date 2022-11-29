@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/harmony-one/harmony/core"
+	"github.com/harmony-one/harmony/core/types"
 	"github.com/harmony-one/harmony/internal/utils"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/prometheus/client_golang/prometheus"
@@ -19,6 +22,8 @@ type StageStatesCfg struct {
 	ctx         context.Context
 	bc          core.BlockChain
 	db          kv.RwDB
+	blockDBs    []kv.RwDB
+	concurrency int
 	logger      zerolog.Logger
 	logProgress bool
 }
@@ -32,6 +37,8 @@ func NewStageStates(cfg StageStatesCfg) *StageStates {
 func NewStageStatesCfg(ctx context.Context,
 	bc core.BlockChain,
 	db kv.RwDB,
+	blockDBs []kv.RwDB,
+	concurrency int,
 	logger zerolog.Logger,
 	logProgress bool) StageStatesCfg {
 
@@ -39,6 +46,8 @@ func NewStageStatesCfg(ctx context.Context,
 		ctx:         ctx,
 		bc:          bc,
 		db:          db,
+		blockDBs:    blockDBs,
+		concurrency: concurrency,
 		logger:      logger,
 		logProgress: logProgress,
 	}
@@ -81,26 +90,134 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 	// startTime := time.Now()
 	// startBlock := currProgress
 
+	// isLastCycle := targetHeight >= s.state.status.targetBN
+	startTime := time.Now()
+	startBlock := currProgress
+	nBlock := int(0)
+	pl := s.state.promLabels()
+	gbm := s.state.gbm
+
+	// prepare db transactions
+	txs := make([]kv.RwTx, stg.configs.concurrency)
+	for i := 0; i < stg.configs.concurrency; i++ {
+		txs[i], err = stg.configs.blockDBs[i].BeginRw(context.Background())
+		if err != nil {
+			return err
+		}
+	}
+
+	defer func() {
+		for i := 0; i < stg.configs.concurrency; i++ {
+			txs[i].Rollback()
+		}
+	}()
+
 	if stg.configs.logProgress {
-		fmt.Print("\033[s") // save the cursor position
+		fmt.Print("\n\033[s") // save the cursor position
+	}
+
+	for i := currProgress + 1; i <= targetHeight; i++ {
+		blkKey := marshalData(i)
+		loopID, _ := gbm.GetDownloadDetails(i)
+
+		blockBytes, err := txs[loopID].GetOne(BlocksBucket, blkKey)
+		if err != nil {
+			return err
+		}
+		sigBytes, err := txs[loopID].GetOne(BlockSignaturesBucket, blkKey)
+		if err != nil {
+			return err
+		}
+
+		// if block size is invalid, we have to break the updating state loop
+		// we don't need to do rollback, because the latest batch haven't added to chain yet
+		sz := len(blockBytes)
+		if sz <= 1 {
+			utils.Logger().Error().
+				Uint64("block number", i).
+				Msg("block size invalid")
+			invalidBlockHash := common.Hash{}
+			s.state.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), invalidBlockHash)
+			return ErrInvalidBlockBytes
+		}
+
+		var block *types.Block
+		if err := rlp.DecodeBytes(blockBytes, &block); err != nil {
+			utils.Logger().Error().
+				Uint64("block number", i).
+				Msg("block size invalid")
+			invalidBlockHash := common.Hash{}
+			s.state.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), invalidBlockHash)
+			return ErrInvalidBlockBytes
+		}
+		if block != nil {
+			block.SetCurrentCommitSig(sigBytes)
+		}
+
+		if block.NumberU64() != i {
+			invalidBlockHash := block.Hash()
+			s.state.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), invalidBlockHash)
+			return ErrInvalidBlockNumber
+		}
+
+		if err := verifyAndInsertBlock(stg.configs.bc, block); err != nil {
+			stg.configs.logger.Warn().Err(err).Uint64("cycle target block", targetHeight).
+				Uint64("block number", block.NumberU64()).
+				Msg("insert blocks failed in long range")
+			pl["error"] = err.Error()
+			longRangeFailInsertedBlockCounterVec.With(pl).Inc()
+
+			// TODO: protocol.RemoveStream(results[i].stid)
+			s.state.gbm.HandleInsertError(i)
+			return err
+		}
+		s.state.gbm.HandleInsertResult(i)
+
+		nBlock++
+		s.state.inserted++
+		longRangeSyncedBlockCounterVec.With(pl).Inc()
+
+		utils.Logger().Info().
+			Uint64("blockHeight", block.NumberU64()).
+			Uint64("blockEpoch", block.Epoch().Uint64()).
+			Str("blockHex", block.Hash().Hex()).
+			Uint32("ShardID", block.ShardID()).
+			Msg("[STAGED_STREAM_SYNC] New Block Added to Blockchain")
+
+		// update cur progress
+		currProgress = stg.configs.bc.CurrentBlock().NumberU64()
+
+		for i, tx := range block.StakingTransactions() {
+			utils.Logger().Info().
+				Msgf(
+					"StakingTxn %d: %s, %v", i, tx.StakingType().String(), tx.StakingMessage(),
+				)
+		}
+
+		// log the stage progress in console
+		if stg.configs.logProgress {
+			//calculating block speed
+			dt := time.Now().Sub(startTime).Seconds()
+			speed := float64(0)
+			if dt > 0 {
+				speed = float64(currProgress-startBlock) / dt
+			}
+			blockSpeed := fmt.Sprintf("%.2f", speed)
+			fmt.Print("\033[u\033[K") // restore the cursor position and clear the line
+			fmt.Println("insert blocks progress:", currProgress, "/", targetHeight, "(", blockSpeed, "blocks/s", ")")
+		}
+
 	}
 
 	// insert blocks
 	// insert the blocks to chain. Return when the target block number is reached.
-	// blockResults := s.state.gbm.PullContinuousBlocks(blocksPerInsert)
+	// blockResults := s.state.gbm.PullContinuousBlocks(BlocksPerInsertion)
 	// s.state.inserted = 0
 	// if len(blockResults) > 0 {
 	// 	lbls := s.state.promLabels()
 	// 	nInserted := stg.processBlocks(blockResults, s.state.gbm, s.state.protocol, lbls, targetHeight)
 	// 	s.state.inserted = nInserted
 	// }
-
-	stg.insertChainLoop(s.state.gbm, s.state.protocol, s.state.promLabels(), targetHeight)
-	select {
-	case <-s.state.ctx.Done():
-		return s.state.ctx.Err()
-	default:
-	}
 
 	if useInternalTx {
 		if err := tx.Commit(); err != nil {
@@ -111,77 +228,11 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 	return nil
 }
 
-func (stg *StageStates) insertChainLoop(gbm *getBlocksManager,
+func (stg *StageStates) insertChain(gbm *getBlocksManager,
 	protocol syncProtocol,
 	lbls prometheus.Labels,
 	targetBN uint64) {
 
-	var (
-		t       = time.NewTicker(100 * time.Millisecond)
-		resultC = make(chan struct{}, 1)
-	)
-	defer t.Stop()
-
-	trigger := func() {
-		select {
-		case resultC <- struct{}{}:
-		default:
-		}
-	}
-
-	for {
-		select {
-		case <-stg.configs.ctx.Done():
-			return
-
-		case <-t.C:
-			// Redundancy, periodically check whether there is blocks that can be processed
-			trigger()
-
-		case <-gbm.resultC:
-			// New block arrive in resultQueue
-			trigger()
-
-		case <-resultC:
-			blockResults := gbm.PullContinuousBlocks(blocksPerInsert)
-			if len(blockResults) > 0 {
-				stg.processBlocks(blockResults, gbm, protocol, lbls, targetBN)
-				// more blocks is expected being able to be pulled from queue
-				trigger()
-			}
-			if stg.configs.bc.CurrentBlock().NumberU64() >= targetBN {
-				return
-			}
-		}
-	}
-}
-
-func (stg *StageStates) processBlocks(results []*blockResult,
-	gbm *getBlocksManager,
-	protocol syncProtocol,
-	pl prometheus.Labels,
-	targetBN uint64) int {
-
-	blocks := blockResultsToBlocks(results)
-	var nInserted int
-
-	for i, block := range blocks {
-		if err := verifyAndInsertBlock(stg.configs.bc, block); err != nil {
-			stg.configs.logger.Warn().Err(err).Uint64("target block", targetBN).
-				Uint64("block number", block.NumberU64()).
-				Msg("insert blocks failed in long range")
-			pl["error"] = err.Error()
-			longRangeFailInsertedBlockCounterVec.With(pl).Inc()
-
-			protocol.RemoveStream(results[i].stid)
-			gbm.HandleInsertError(results, i)
-			return nInserted
-		}
-		nInserted++
-		longRangeSyncedBlockCounterVec.With(pl).Inc()
-	}
-	gbm.HandleInsertResult(results)
-	return nInserted
 }
 
 func (stg *StageStates) saveProgress(s *StageState, tx kv.RwTx) (err error) {

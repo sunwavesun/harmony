@@ -3,43 +3,34 @@ package stagedstreamsync
 import (
 	"sync"
 
+	"github.com/harmony-one/harmony/core/types"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
-	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/rs/zerolog"
 )
-
-type BlockDownloadDetails struct {
-	loopID   int
-	streamID sttypes.StreamID
-}
 
 // getBlocksManager is the helper structure for get blocks request management
 type getBlocksManager struct {
 	chain blockChain
-	tx    kv.RwTx
 
 	targetBN   uint64
-	requesting map[uint64]struct{}             // block numbers that have been assigned to workers but not received
-	processing map[uint64]struct{}             // block numbers received requests but not inserted
-	retries    *prioritizedNumbers             // requests where error happens
-	rq         *resultQueue                    // result queue wait to be inserted into blockchain
-	bdd        map[uint64]BlockDownloadDetails // details about how this block was downloaded
+	requesting map[uint64]struct{} // block numbers that have been assigned to workers but not received
+	processing map[uint64]struct{} // block numbers received requests but not inserted
+	retries    *prioritizedNumbers // requests where error happens
+	rq         *resultQueue        // result queue wait to be inserted into blockchain
 
 	resultC chan struct{}
 	logger  zerolog.Logger
 	lock    sync.Mutex
 }
 
-func newGetBlocksManager(tx kv.RwTx, chain blockChain, targetBN uint64, logger zerolog.Logger) *getBlocksManager {
+func newGetBlocksManager(chain blockChain, targetBN uint64, logger zerolog.Logger) *getBlocksManager {
 	return &getBlocksManager{
 		chain:      chain,
-		tx:         tx,
 		targetBN:   targetBN,
 		requesting: make(map[uint64]struct{}),
 		processing: make(map[uint64]struct{}),
 		retries:    newPrioritizedNumbers(),
 		rq:         newResultQueue(),
-		bdd:        make(map[uint64]BlockDownloadDetails),
 		resultC:    make(chan struct{}, 1),
 		logger:     logger,
 	}
@@ -53,8 +44,8 @@ func (gbm *getBlocksManager) GetNextBatch() []uint64 {
 	cap := BlocksPerRequest
 
 	bns := gbm.getBatchFromRetries(cap)
+	cap -= len(bns)
 	if len(bns) > 0 {
-		cap -= len(bns)
 		gbm.addBatchToRequesting(bns)
 	}
 
@@ -68,11 +59,11 @@ func (gbm *getBlocksManager) GetNextBatch() []uint64 {
 }
 
 // HandleRequestError handles the error result
-func (gbm *getBlocksManager) HandleRequestError(bns []uint64, err error, streamID sttypes.StreamID) {
+func (gbm *getBlocksManager) HandleRequestError(bns []uint64, err error, stid sttypes.StreamID) {
 	gbm.lock.Lock()
 	defer gbm.lock.Unlock()
 
-	gbm.logger.Warn().Err(err).Str("stream", string(streamID)).Msg("get blocks error")
+	gbm.logger.Warn().Err(err).Str("stream", string(stid)).Msg("get blocks error")
 
 	// add requested block numbers to retries
 	for _, bn := range bns {
@@ -81,69 +72,74 @@ func (gbm *getBlocksManager) HandleRequestError(bns []uint64, err error, streamI
 	}
 
 	// remove results from result queue by the stream and add back to retries
-	// removed := gbm.rq.removeResultsByStreamID(streamID)
-	// for _, bn := range removed {
-	// 	delete(gbm.processing, bn)
-	// 	gbm.retries.push(bn)
-	// }
+	removed := gbm.rq.removeResultsByStreamID(stid)
+	for _, bn := range removed {
+		delete(gbm.processing, bn)
+		gbm.retries.push(bn)
+	}
 }
 
 // HandleRequestResult handles get blocks result
-func (gbm *getBlocksManager) HandleRequestResult(bns []uint64, blockBytes [][]byte, sigBytes [][]byte, loopID int, streamID sttypes.StreamID) error {
+func (gbm *getBlocksManager) HandleRequestResult(bns []uint64, blocks []*types.Block, stid sttypes.StreamID) {
 	gbm.lock.Lock()
 	defer gbm.lock.Unlock()
 
 	for i, bn := range bns {
 		delete(gbm.requesting, bn)
-		if len(blockBytes[i]) <= 1 {
+		if blocks[i] == nil {
 			gbm.retries.push(bn)
 		} else {
 			gbm.processing[bn] = struct{}{}
-			gbm.bdd[bn] = BlockDownloadDetails{
-				loopID:   loopID,
-				streamID: streamID,
-			}
 		}
 	}
-	return nil
-}
-
-// SetDownloadDetails sets the download details for a batch of blocks
-func (gbm *getBlocksManager) SetDownloadDetails(bns []uint64, loopID int, streamID sttypes.StreamID) error {
-	gbm.lock.Lock()
-	defer gbm.lock.Unlock()
-
-	for _, bn := range bns {
-		gbm.bdd[bn] = BlockDownloadDetails{
-			loopID:   loopID,
-			streamID: streamID,
-		}
+	gbm.rq.addBlockResults(blocks, stid)
+	select {
+	case gbm.resultC <- struct{}{}:
+	default:
 	}
-	return nil
-}
-
-func (gbm *getBlocksManager) GetDownloadDetails(blockNumber uint64) (loopID int, streamID sttypes.StreamID) {
-	gbm.lock.Lock()
-	defer gbm.lock.Unlock()
-
-	return gbm.bdd[blockNumber].loopID, gbm.bdd[blockNumber].streamID
 }
 
 // HandleInsertResult handle the insert result
-func (gbm *getBlocksManager) HandleInsertResult(blkNum uint64) {
+func (gbm *getBlocksManager) HandleInsertResult(inserted []*blockResult) {
 	gbm.lock.Lock()
 	defer gbm.lock.Unlock()
 
-	delete(gbm.processing, blkNum)
+	for _, block := range inserted {
+		delete(gbm.processing, block.getBlockNumber())
+	}
 }
 
 // HandleInsertError handles the error during InsertChain
-func (gbm *getBlocksManager) HandleInsertError(blkNum uint64) {
+func (gbm *getBlocksManager) HandleInsertError(results []*blockResult, n int) {
 	gbm.lock.Lock()
 	defer gbm.lock.Unlock()
 
-	delete(gbm.processing, blkNum)
-	gbm.retries.push(blkNum)
+	var (
+		inserted  []*blockResult
+		errResult *blockResult
+		abandoned []*blockResult
+	)
+	inserted = results[:n]
+	errResult = results[n]
+	if n != len(results) {
+		abandoned = results[n+1:]
+	}
+
+	for _, res := range inserted {
+		delete(gbm.processing, res.getBlockNumber())
+	}
+	for _, res := range abandoned {
+		gbm.rq.addBlockResults([]*types.Block{res.block}, res.stid)
+	}
+
+	delete(gbm.processing, errResult.getBlockNumber())
+	gbm.retries.push(errResult.getBlockNumber())
+
+	removed := gbm.rq.removeResultsByStreamID(errResult.stid)
+	for _, bn := range removed {
+		delete(gbm.processing, bn)
+		gbm.retries.push(bn)
+	}
 }
 
 // PullContinuousBlocks pull continuous blocks from request queue

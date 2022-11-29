@@ -55,7 +55,6 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 		SmHiCap:      config.SmHiCap,
 		DiscBatch:    config.SmDiscBatch,
 	})
-	fmt.Println("======[SHARD:", bc.ShardID(), "]=========----> MY PROTOID: ", sp.ProtoID(), " ID:", host.GetID(), "===================")
 
 	host.AddStreamProtocol(sp)
 
@@ -93,10 +92,8 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 // Start start the downloader
 func (d *Downloader) Start() {
 	go func() {
-		//if d.syncProtocol.NumStreams() < d.config.InitStreams {
 		d.waitForBootFinish()
-		fmt.Println("BOOT--------$$$$$$$[shard:", d.bc.ShardID(), "]$$$$$$$$$$$$$$------> DONE")
-		//}
+		fmt.Println("boot finished successfully")
 		d.loop()
 	}()
 

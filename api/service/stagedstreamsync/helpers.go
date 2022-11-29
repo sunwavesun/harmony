@@ -36,18 +36,6 @@ func divideCeil(x, y int) int {
 	return int(math.Ceil(fVal))
 }
 
-func validateGetBlocksResult(requested []uint64, result []*types.Block) error {
-	if len(result) != len(requested) {
-		return fmt.Errorf("unexpected number of blocks delivered: %v / %v", len(result), len(requested))
-	}
-	for i, block := range result {
-		if block != nil && block.NumberU64() != requested[i] {
-			return fmt.Errorf("block with unexpected number delivered: %v / %v", block.NumberU64(), requested[i])
-		}
-	}
-	return nil
-}
-
 // computeBlockNumberByMaxVote compute the target block number by max vote.
 func computeBlockNumberByMaxVote(votes map[sttypes.StreamID]uint64) uint64 {
 	var (

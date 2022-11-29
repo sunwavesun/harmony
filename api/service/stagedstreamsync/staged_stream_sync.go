@@ -222,8 +222,6 @@ func New(ctx context.Context,
 	logger zerolog.Logger,
 ) *StagedStreamSync {
 
-	fmt.Println("NEW STREAM SYNC ---------------> shard id: ", bc.ShardID())
-
 	revertStages := make([]*Stage, len(stagesList))
 	for i, stageIndex := range DefaultRevertOrder {
 		for _, s := range stagesList {
@@ -342,7 +340,6 @@ func (s *StagedStreamSync) Run(db kv.RwDB, tx kv.RwTx, firstCycle bool) error {
 		if err := s.runStage(stage, db, tx, firstCycle, invalidBlockRevert); err != nil {
 			return err
 		}
-
 		s.NextStage()
 	}
 
