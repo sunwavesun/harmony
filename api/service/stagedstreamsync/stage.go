@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
 	"github.com/ledgerwatch/erigon-lib/kv"
 )
 
@@ -74,18 +75,14 @@ func (s *StageState) UpdateCleanUp(db kv.Putter, blockNum uint64) error {
 // Reverter allows the stage to cause an revert.
 type Reverter interface {
 	// RevertTo begins staged sync revert to the specified block.
-	RevertTo(revertPoint uint64, invalidBlock common.Hash)
+	RevertTo(revertPoint uint64, invalidBlockNumber uint64, invalidBlockHash common.Hash, invalidBlockStreamID sttypes.StreamID)
 }
 
 // RevertState contains the information about revert.
 type RevertState struct {
-	ID SyncStageID
-	// RevertPoint is the block to revert to.
-	RevertPoint        uint64
-	CurrentBlockNumber uint64
-	// If revert is caused by a bad block, this hash is not empty
-	InvalidBlock common.Hash
-	state        *StagedStreamSync
+	ID          SyncStageID
+	RevertPoint uint64 // RevertPoint is the block to revert to.
+	state       *StagedStreamSync
 }
 
 func (u *RevertState) LogPrefix() string { return u.state.LogPrefix() }

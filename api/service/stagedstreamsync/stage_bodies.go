@@ -56,6 +56,10 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 
 	useInternalTx := tx == nil
 
+	if invalidBlockRevert {
+		return b.redownloadBadBlock(s)
+	}
+
 	// for short range sync, skip this stage
 	if !s.state.initSync {
 		return nil
@@ -169,6 +173,48 @@ func (b *StageBodies) runBlockWorkerLoop(gbm *getBlocksManager, wg *sync.WaitGro
 			}
 		}
 	}
+}
+
+// runBlockWorkerLoop creates a work loop for download blocks
+func (b *StageBodies) redownloadBadBlock(s *StageState) error {
+
+	batch := make([]uint64, 1)
+	batch = append(batch, s.state.invalidBlock.Number)
+
+	for {
+		if b.configs.protocol.NumStreams() == 0 {
+			return errors.Errorf("re-download bad block from all streams failed")
+		}
+		blockBytes, sigBytes, stid, err := b.downloadRawBlocks(batch)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				b.configs.protocol.RemoveStream(stid)
+			}
+			continue
+		}
+		isOneOfTheBadStreams := false
+		for _, id := range s.state.invalidBlock.StreamID {
+			if id == stid {
+				b.configs.protocol.RemoveStream(stid)
+				isOneOfTheBadStreams = true
+				break
+			}
+		}
+		if isOneOfTheBadStreams {
+			continue
+		}
+		s.state.gbm.SetDownloadDetails(batch, 0, stid)
+		if errU := b.configs.blockDBs[0].Update(context.Background(), func(tx kv.RwTx) error {
+			if err = b.saveBlocks(tx, batch, blockBytes, sigBytes, 0, stid); err != nil {
+				return errors.Errorf("[STAGED_STREAM_SYNC] saving re-downloaded bad block to db failed.")
+			}
+			return nil
+		}); errU != nil {
+			continue
+		}
+		break
+	}
+	return nil
 }
 
 func (b *StageBodies) downloadBlocks(bns []uint64) ([]*types.Block, sttypes.StreamID, error) {

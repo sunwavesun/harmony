@@ -40,7 +40,7 @@ func (sr *StageEpoch) SetStageContext(ctx context.Context) {
 
 func (sr *StageEpoch) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) error {
 
-	// no need to update target if we are redoing the stages because of bad block
+	// no need to update epoch chain if we are redoing the stages because of bad block
 	if invalidBlockRevert {
 		return nil
 	}

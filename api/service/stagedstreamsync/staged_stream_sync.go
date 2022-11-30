@@ -18,6 +18,33 @@ import (
 	"github.com/rs/zerolog"
 )
 
+type InvalidBlock struct {
+	Active   bool
+	Number   uint64
+	Hash     common.Hash
+	StreamID []sttypes.StreamID
+}
+
+func (ib *InvalidBlock) set(num uint64, hash common.Hash, resetBadStreams bool) {
+	ib.Active = true
+	ib.Number = num
+	ib.Hash = hash
+	if resetBadStreams {
+		ib.StreamID = make([]sttypes.StreamID, 0)
+	}
+}
+
+func (ib *InvalidBlock) resolve() {
+	ib.Active = false
+	ib.Number = 0
+	ib.Hash = common.Hash{}
+	ib.StreamID = ib.StreamID[:0]
+}
+
+func (ib *InvalidBlock) addBadStream(bsID sttypes.StreamID) {
+	ib.StreamID = append(ib.StreamID, bsID)
+}
+
 type StagedStreamSync struct {
 	ctx        context.Context
 	bc         core.BlockChain
@@ -35,7 +62,7 @@ type StagedStreamSync struct {
 
 	revertPoint     *uint64 // used to run stages
 	prevRevertPoint *uint64 // used to get value from outside of staged sync after cycle (for example to notify RPCDaemon)
-	invalidBlock    common.Hash
+	invalidBlock    InvalidBlock
 	currentStage    uint
 	LogProgress     bool
 	currentCycle    SyncCycle // current cycle
@@ -85,8 +112,8 @@ func (s *StagedStreamSync) LogPrefix() string {
 }
 func (s *StagedStreamSync) PrevRevertPoint() *uint64 { return s.prevRevertPoint }
 
-func (s *StagedStreamSync) NewRevertState(id SyncStageID, revertPoint, currentProgress uint64) *RevertState {
-	return &RevertState{id, revertPoint, currentProgress, common.Hash{}, s}
+func (s *StagedStreamSync) NewRevertState(id SyncStageID, revertPoint uint64) *RevertState {
+	return &RevertState{id, revertPoint, s}
 }
 
 func (s *StagedStreamSync) CleanUpStageState(id SyncStageID, forwardProgress uint64, tx kv.Tx, db kv.RwDB) (*CleanUpState, error) {
@@ -147,13 +174,19 @@ func (s *StagedStreamSync) IsAfter(stage1, stage2 SyncStageID) bool {
 	return idx1 > idx2
 }
 
-func (s *StagedStreamSync) RevertTo(revertPoint uint64, invalidBlock common.Hash) {
+func (s *StagedStreamSync) RevertTo(revertPoint uint64, invalidBlockNumber uint64, invalidBlockHash common.Hash, invalidBlockStreamID sttypes.StreamID) {
 	utils.Logger().Info().
-		Interface("invalidBlock", invalidBlock).
+		Interface("invalidBlockNumber", invalidBlockNumber).
+		Interface("invalidBlockHash", invalidBlockHash).
+		Interface("invalidBlockStreamID", invalidBlockStreamID).
 		Uint64("revertPoint", revertPoint).
 		Msgf("[STAGED_SYNC] Reverting blocks")
 	s.revertPoint = &revertPoint
-	s.invalidBlock = invalidBlock
+	if invalidBlockNumber > 0 || invalidBlockHash != (common.Hash{}) {
+		resetBadStreams := !s.invalidBlock.Active
+		s.invalidBlock.set(invalidBlockNumber, invalidBlockHash, resetBadStreams)
+		s.invalidBlock.addBadStream(invalidBlockStreamID)
+	}
 }
 
 func (s *StagedStreamSync) Done() {
@@ -305,22 +338,19 @@ func (s *StagedStreamSync) Run(db kv.RwDB, tx kv.RwTx, firstCycle bool) error {
 	s.timings = s.timings[:0]
 
 	for !s.IsDone() {
-		var invalidBlockRevert bool
 		if s.revertPoint != nil {
-			for j := 0; j < len(s.revertOrder); j++ {
-				if s.revertOrder[j] == nil || s.revertOrder[j].Disabled {
-					continue
-				}
-				if err := s.revertStage(firstCycle, s.revertOrder[j], db, tx); err != nil {
-					return err
-				}
-			}
 			s.prevRevertPoint = s.revertPoint
 			s.revertPoint = nil
-			if s.invalidBlock != (common.Hash{}) {
-				invalidBlockRevert = true
+			if !s.invalidBlock.Active {
+				for j := 0; j < len(s.revertOrder); j++ {
+					if s.revertOrder[j] == nil || s.revertOrder[j].Disabled {
+						continue
+					}
+					if err := s.revertStage(firstCycle, s.revertOrder[j], db, tx); err != nil {
+						return err
+					}
+				}
 			}
-			s.invalidBlock = common.Hash{}
 			if err := s.SetCurrentStage(s.stages[0].ID); err != nil {
 				return err
 			}
@@ -337,7 +367,7 @@ func (s *StagedStreamSync) Run(db kv.RwDB, tx kv.RwTx, firstCycle bool) error {
 			continue
 		}
 
-		if err := s.runStage(stage, db, tx, firstCycle, invalidBlockRevert); err != nil {
+		if err := s.runStage(stage, db, tx, firstCycle, s.invalidBlock.Active); err != nil {
 			return err
 		}
 		s.NextStage()
@@ -461,8 +491,7 @@ func (s *StagedStreamSync) revertStage(firstCycle bool, stage *Stage, db kv.RwDB
 		return err
 	}
 
-	revert := s.NewRevertState(stage.ID, *s.revertPoint, stageState.BlockNumber)
-	revert.InvalidBlock = s.invalidBlock
+	revert := s.NewRevertState(stage.ID, *s.revertPoint)
 
 	if stageState.BlockNumber <= revert.RevertPoint {
 		return nil

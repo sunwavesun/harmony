@@ -40,7 +40,7 @@ func (sr *StageShortRange) SetStageContext(ctx context.Context) {
 
 func (sr *StageShortRange) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) error {
 
-	// no need to update target if we are redoing the stages because of bad block
+	// no need to do short range if we are redoing the stages because of bad block
 	if invalidBlockRevert {
 		return nil
 	}

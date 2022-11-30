@@ -60,6 +60,10 @@ func (stg *StageStates) SetStageContext(ctx context.Context) {
 // Exec progresses States stage in the forward direction
 func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) (err error) {
 
+	if invalidBlockRevert {
+		return nil
+	}
+
 	// for short range sync, skip this step
 	if !s.state.initSync {
 		return nil
@@ -85,12 +89,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 		defer tx.Rollback()
 	}
 
-	// blocksBucketName := GetBucketName(DownloadedBlocksBucket, s.state.isBeacon)
 	// isLastCycle := targetHeight >= maxHeight
-	// startTime := time.Now()
-	// startBlock := currProgress
-
-	// isLastCycle := targetHeight >= s.state.status.targetBN
 	startTime := time.Now()
 	startBlock := currProgress
 	nBlock := int(0)
@@ -118,7 +117,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 
 	for i := currProgress + 1; i <= targetHeight; i++ {
 		blkKey := marshalData(i)
-		loopID, _ := gbm.GetDownloadDetails(i)
+		loopID, streamID := gbm.GetDownloadDetails(i)
 
 		blockBytes, err := txs[loopID].GetOne(BlocksBucket, blkKey)
 		if err != nil {
@@ -137,7 +136,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 				Uint64("block number", i).
 				Msg("block size invalid")
 			invalidBlockHash := common.Hash{}
-			s.state.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), invalidBlockHash)
+			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), i, invalidBlockHash, streamID)
 			return ErrInvalidBlockBytes
 		}
 
@@ -147,7 +146,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 				Uint64("block number", i).
 				Msg("block size invalid")
 			invalidBlockHash := common.Hash{}
-			s.state.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), invalidBlockHash)
+			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), i, invalidBlockHash, streamID)
 			return ErrInvalidBlockBytes
 		}
 		if block != nil {
@@ -156,7 +155,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 
 		if block.NumberU64() != i {
 			invalidBlockHash := block.Hash()
-			s.state.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), invalidBlockHash)
+			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), i, invalidBlockHash, streamID)
 			return ErrInvalidBlockNumber
 		}
 
@@ -168,10 +167,16 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 			longRangeFailInsertedBlockCounterVec.With(pl).Inc()
 
 			// TODO: protocol.RemoveStream(results[i].stid)
-			s.state.gbm.HandleInsertError(i)
+			//s.state.gbm.HandleInsertError(i)
 			return err
 		}
-		s.state.gbm.HandleInsertResult(i)
+		//s.state.gbm.HandleInsertResult(i)
+
+		if invalidBlockRevert {
+			if s.state.invalidBlock.Number == i {
+				s.state.invalidBlock.resolve()
+			}
+		}
 
 		nBlock++
 		s.state.inserted++
