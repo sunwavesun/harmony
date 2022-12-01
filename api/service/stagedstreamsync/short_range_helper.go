@@ -169,7 +169,7 @@ func (sh *srHelper) doGetBlockHashesRequest(bns []uint64) ([]common.Hash, sttype
 	if len(hashes) != len(bns) {
 		err := errors.New("unexpected get block hashes result delivered")
 		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to doGetBlockHashesRequest")
-		sh.syncProtocol.RemoveStream(stid)
+		sh.syncProtocol.StreamFailed(stid, "unexpected get block hashes result delivered")
 		return nil, stid, err
 	}
 	return hashes, stid, nil
@@ -199,7 +199,7 @@ func (sh *srHelper) doGetBlocksByHashesRequest(ctx context.Context, hashes []com
 	}
 	if err := checkGetBlockByHashesResult(blocks, hashes); err != nil {
 		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to getBlockByHashes")
-		sh.syncProtocol.RemoveStream(stid)
+		sh.syncProtocol.StreamFailed(stid, "failed to getBlockByHashes")
 		return nil, stid, err
 	}
 	return blocks, stid, nil

@@ -65,8 +65,6 @@ func (bh *StageFinish) clearBucket(tx kv.RwTx, isBeacon bool) error {
 		defer tx.Rollback()
 	}
 
-	
-
 	if useInternalTx {
 		if err := tx.Commit(); err != nil {
 			return err

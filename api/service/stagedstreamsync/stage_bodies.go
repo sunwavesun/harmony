@@ -112,7 +112,7 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 	}
 
 	// Fetch blocks from neighbors
-	s.state.gbm = newGetBlocksManager(tx, b.configs.bc, targetHeight, s.state.logger)
+	s.state.gbm = newBlockDownloadManager(tx, b.configs.bc, targetHeight, s.state.logger)
 
 	// Setup workers to fetch blocks from remote node
 	var wg sync.WaitGroup
@@ -134,7 +134,7 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 }
 
 // runBlockWorkerLoop creates a work loop for download blocks
-func (b *StageBodies) runBlockWorkerLoop(gbm *getBlocksManager, wg *sync.WaitGroup, loopID int) {
+func (b *StageBodies) runBlockWorkerLoop(gbm *blockDownloadManager, wg *sync.WaitGroup, loopID int) {
 
 	defer wg.Done()
 
@@ -157,7 +157,7 @@ func (b *StageBodies) runBlockWorkerLoop(gbm *getBlocksManager, wg *sync.WaitGro
 		blockBytes, sigBytes, stid, err := b.downloadRawBlocks(batch)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
-				b.configs.protocol.RemoveStream(stid)
+				b.configs.protocol.StreamFailed(stid, "downloadRawBlocks failed")
 			}
 			err = errors.Wrap(err, "request error")
 			gbm.HandleRequestError(batch, err, stid)
@@ -188,7 +188,7 @@ func (b *StageBodies) redownloadBadBlock(s *StageState) error {
 		blockBytes, sigBytes, stid, err := b.downloadRawBlocks(batch)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
-				b.configs.protocol.RemoveStream(stid)
+				b.configs.protocol.StreamFailed(stid, "tried to re-download bad block from this stream, but downloadRawBlocks failed")
 			}
 			continue
 		}

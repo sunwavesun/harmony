@@ -52,7 +52,7 @@ type StagedStreamSync struct {
 	isExplorer bool
 	db         kv.RwDB
 	protocol   syncProtocol
-	gbm        *getBlocksManager // initialized when finished get block number
+	gbm        *blockDownloadManager // initialized when finished get block number
 	inserted   int
 	config     Config
 	logger     zerolog.Logger

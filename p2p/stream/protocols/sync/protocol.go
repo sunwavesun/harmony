@@ -171,7 +171,7 @@ func (p *Protocol) HandleStream(raw libp2p_network.Stream) {
 			Msg("failed to add new stream")
 		return
 	}
-	fmt.Println("Node connected to", raw.Conn().RemotePeer().String(), "(",st.ProtoID(),")")
+	fmt.Println("Node connected to", raw.Conn().RemotePeer().String(), "(", st.ProtoID(), ")")
 	st.run()
 }
 
@@ -237,14 +237,32 @@ func (p *Protocol) protoIDByVersion(v *version.Version) sttypes.ProtoID {
 // RemoveStream removes the stream of the given stream ID
 // TODO: add reason to parameters
 func (p *Protocol) RemoveStream(stID sttypes.StreamID) {
-	if stID == "" {
-		return
-	}
 	st, exist := p.sm.GetStreamByID(stID)
 	if exist && st != nil {
 		//TODO: log this incident with reason
 		st.Close()
-		//TODO: do we need to do this  as well? p.sm.RemoveStream(stID)
+		// stream manager removes this stream from the list and triggers discovery if number of streams are not enough
+		p.sm.RemoveStream(stID) //TODO: double check to see if this part is needed
+	}
+}
+
+func (p *Protocol) StreamFailed(stID sttypes.StreamID, reason string) {
+	st, exist := p.sm.GetStreamByID(stID)
+	if exist && st != nil {
+		st.AddFailedTimes()
+		p.logger.Info().
+			Str("stream ID", string(st.ID())).
+			Int("num failures", st.FailedTimes()).
+			Str("reason", reason).
+			Msg("stream failed")
+		if st.FailedTimes() >= MaxStreamFailures {
+			st.Close()
+			// stream manager removes this stream from the list and triggers discovery if number of streams are not enough
+			p.sm.RemoveStream(stID) //TODO: double check to see if this part is needed
+			p.logger.Warn().
+				Str("stream ID", string(st.ID())).
+				Msg("stream removed")
+		}
 	}
 }
 

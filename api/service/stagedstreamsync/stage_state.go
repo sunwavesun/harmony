@@ -60,10 +60,6 @@ func (stg *StageStates) SetStageContext(ctx context.Context) {
 // Exec progresses States stage in the forward direction
 func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageState, reverter Reverter, tx kv.RwTx) (err error) {
 
-	if invalidBlockRevert {
-		return nil
-	}
-
 	// for short range sync, skip this step
 	if !s.state.initSync {
 		return nil
@@ -92,7 +88,6 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 	// isLastCycle := targetHeight >= maxHeight
 	startTime := time.Now()
 	startBlock := currProgress
-	nBlock := int(0)
 	pl := s.state.promLabels()
 	gbm := s.state.gbm
 
@@ -112,7 +107,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 	}()
 
 	if stg.configs.logProgress {
-		fmt.Print("\n\033[s") // save the cursor position
+		fmt.Print("\033[s") // save the cursor position
 	}
 
 	for i := currProgress + 1; i <= targetHeight; i++ {
@@ -136,6 +131,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 				Uint64("block number", i).
 				Msg("block size invalid")
 			invalidBlockHash := common.Hash{}
+			s.state.protocol.StreamFailed(streamID, "zero bytes block is received from stream")
 			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), i, invalidBlockHash, streamID)
 			return ErrInvalidBlockBytes
 		}
@@ -145,15 +141,17 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 			utils.Logger().Error().
 				Uint64("block number", i).
 				Msg("block size invalid")
+			s.state.protocol.StreamFailed(streamID, "invalid block is received from stream")
 			invalidBlockHash := common.Hash{}
 			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), i, invalidBlockHash, streamID)
 			return ErrInvalidBlockBytes
 		}
-		if block != nil {
+		if sigBytes != nil {
 			block.SetCurrentCommitSig(sigBytes)
 		}
 
 		if block.NumberU64() != i {
+			s.state.protocol.StreamFailed(streamID, "invalid block with unmatched number is received from stream")
 			invalidBlockHash := block.Hash()
 			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), i, invalidBlockHash, streamID)
 			return ErrInvalidBlockNumber
@@ -163,14 +161,13 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 			stg.configs.logger.Warn().Err(err).Uint64("cycle target block", targetHeight).
 				Uint64("block number", block.NumberU64()).
 				Msg("insert blocks failed in long range")
+			s.state.protocol.StreamFailed(streamID, "unverifiable invalid block is received from stream")
+			invalidBlockHash := block.Hash()
+			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), block.NumberU64(), invalidBlockHash, streamID)
 			pl["error"] = err.Error()
 			longRangeFailInsertedBlockCounterVec.With(pl).Inc()
-
-			// TODO: protocol.RemoveStream(results[i].stid)
-			//s.state.gbm.HandleInsertError(i)
 			return err
 		}
-		//s.state.gbm.HandleInsertResult(i)
 
 		if invalidBlockRevert {
 			if s.state.invalidBlock.Number == i {
@@ -178,7 +175,6 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 			}
 		}
 
-		nBlock++
 		s.state.inserted++
 		longRangeSyncedBlockCounterVec.With(pl).Inc()
 
@@ -233,7 +229,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 	return nil
 }
 
-func (stg *StageStates) insertChain(gbm *getBlocksManager,
+func (stg *StageStates) insertChain(gbm *blockDownloadManager,
 	protocol syncProtocol,
 	lbls prometheus.Labels,
 	targetBN uint64) {

@@ -320,9 +320,9 @@ func (s *StagedStreamSync) estimateCurrentNumber() (uint64, error) {
 			bn, stid, err := s.doGetCurrentNumberRequest()
 			if err != nil {
 				s.logger.Err(err).Str("streamID", string(stid)).
-					Msg("getCurrentNumber request failed. Removing stream")
+					Msg("getCurrentNumber request failed")
 				if !errors.Is(err, context.Canceled) {
-					s.protocol.RemoveStream(stid)
+					s.protocol.StreamFailed(stid, "getCurrentNumber request failed")
 				}
 				return
 			}

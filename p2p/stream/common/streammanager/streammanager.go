@@ -398,6 +398,10 @@ func (ss *streamSet) get(id sttypes.StreamID) (sttypes.Stream, bool) {
 	ss.lock.RLock()
 	defer ss.lock.RUnlock()
 
+	if id == "" {
+		return nil, false
+	}
+
 	st, ok := ss.streams[id]
 	return st, ok
 }
