@@ -96,10 +96,10 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 	}
 
 	// size := uint64(0)
-	// startTime := time.Now()
+	startTime := time.Now()
 	// startBlock := currProgress
 	if b.configs.logProgress {
-		fmt.Print("\n\033[s") // save the cursor position
+		fmt.Print("\033[s") // save the cursor position
 	}
 
 	if useInternalTx {
@@ -119,7 +119,7 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 
 	for i := 0; i != s.state.config.Concurrency; i++ {
 		wg.Add(1)
-		go b.runBlockWorkerLoop(s.state.gbm, &wg, i)
+		go b.runBlockWorkerLoop(s.state.gbm, &wg, i, startTime)
 	}
 
 	wg.Wait()
@@ -134,7 +134,9 @@ func (b *StageBodies) Exec(firstCycle bool, invalidBlockRevert bool, s *StageSta
 }
 
 // runBlockWorkerLoop creates a work loop for download blocks
-func (b *StageBodies) runBlockWorkerLoop(gbm *blockDownloadManager, wg *sync.WaitGroup, loopID int) {
+func (b *StageBodies) runBlockWorkerLoop(gbm *blockDownloadManager, wg *sync.WaitGroup, loopID int, startTime time.Time) {
+
+	currentBlock := int(b.configs.bc.CurrentBlock().NumberU64())
 
 	defer wg.Done()
 
@@ -167,9 +169,16 @@ func (b *StageBodies) runBlockWorkerLoop(gbm *blockDownloadManager, wg *sync.Wai
 			}
 			gbm.HandleRequestResult(batch, blockBytes, sigBytes, loopID, stid)
 			if b.configs.logProgress {
-				//calculating block speed
+				//calculating block download speed
+				dt := time.Now().Sub(startTime).Seconds()
+				speed := float64(0)
+				if dt > 0 {
+					speed = float64(len(gbm.bdd)) / dt
+				}
+				blockSpeed := fmt.Sprintf("%.2f", speed)
+
 				fmt.Print("\033[u\033[K") // restore the cursor position and clear the line
-				fmt.Println("downloaded blocks:", gbm.rq.length())
+				fmt.Println("downloaded blocks:", currentBlock+len(gbm.bdd), "/", int(gbm.targetBN), "(", blockSpeed, "blocks/s", ")")
 			}
 		}
 	}
