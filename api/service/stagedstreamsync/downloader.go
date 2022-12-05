@@ -167,7 +167,6 @@ func (d *Downloader) waitForBootFinish() {
 	t := time.NewTicker(10 * time.Second)
 	defer t.Stop()
 	for {
-		d.logger.Info().Msg("waiting for initial bootstrap discovery")
 		select {
 		case <-t.C:
 			trigger()
@@ -205,8 +204,21 @@ func (d *Downloader) loop() {
 		case <-d.downloadC:
 			addedBN, err := d.stagedSyncInstance.doSync(d.ctx, initSync)
 			if err != nil {
+				//TODO: if there is a bad block which can't be resolved
+				if d.stagedSyncInstance.invalidBlock.Active {
+					numTriedStreams := len(d.stagedSyncInstance.invalidBlock.StreamID)
+					// if many streams couldn't solve it, then that's an unresolvable bad block
+					if numTriedStreams >= d.config.InitStreams {
+						fmt.Println("unresolvable bad block:", d.stagedSyncInstance.invalidBlock.Number)
+						//TODO: if we don't have any new or untried stream in the list, sleep or panic 
+					}
+				}
+
 				// If error happens, sleep 5 seconds and retry
-				d.logger.Warn().Err(err).Bool("bootstrap", initSync).Msg("failed to download")
+				d.logger.Error().
+					Err(err).
+					Bool("initSync", initSync).
+					Msg(WrapStagedSyncMsg("sync loop failed"))
 				go func() {
 					time.Sleep(5 * time.Second)
 					trigger()
@@ -218,7 +230,7 @@ func (d *Downloader) loop() {
 				Uint64("current height", d.bc.CurrentBlock().NumberU64()).
 				Bool("initSync", initSync).
 				Uint32("shard", d.bc.ShardID()).
-				Msg("sync finished")
+				Msg(WrapStagedSyncMsg("sync finished"))
 
 			if addedBN != 0 {
 				// If block number has been changed, trigger another sync

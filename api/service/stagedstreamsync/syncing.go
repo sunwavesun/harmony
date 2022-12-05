@@ -166,10 +166,6 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 
 	s.initSync = initSync
 
-	defer func() {
-		fmt.Println("node is synchronized")
-	}()
-
 	if err := s.checkPrerequisites(); err != nil {
 		return 0, err
 	}
@@ -185,17 +181,12 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 		}
 		if curBN := s.bc.CurrentBlock().NumberU64(); estimatedHeight <= curBN {
 			s.logger.Info().Uint64("current number", curBN).Uint64("target number", estimatedHeight).
-				Msg("early return of long range sync")
+				Msg(WrapStagedSyncMsg("early return of long range sync"))
 			return 0, nil
 		}
 
 		s.startSyncing()
 		defer s.finishSyncing()
-
-		utils.Logger().Info().
-			Uint64("current height", s.bc.CurrentBlock().NumberU64()).
-			Uint64("target height", estimatedHeight).
-			Msgf("staged sync is executing ... ")
 	}
 
 	for {
@@ -257,7 +248,7 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 			Bool("isBeacon", s.isBeacon).
 			Uint32("shard", s.bc.ShardID()).
 			Uint64("currentHeight", startHead).
-			Msgf("[STAGED_SYNC] sync cycle failed")
+			Msgf(WrapStagedSyncMsg("sync cycle failed"))
 		return totalInserted, err
 	}
 	//cancel()
@@ -320,7 +311,7 @@ func (s *StagedStreamSync) estimateCurrentNumber() (uint64, error) {
 			bn, stid, err := s.doGetCurrentNumberRequest()
 			if err != nil {
 				s.logger.Err(err).Str("streamID", string(stid)).
-					Msg("getCurrentNumber request failed")
+					Msg(WrapStagedSyncMsg("getCurrentNumber request failed"))
 				if !errors.Is(err, context.Canceled) {
 					s.protocol.StreamFailed(stid, "getCurrentNumber request failed")
 				}

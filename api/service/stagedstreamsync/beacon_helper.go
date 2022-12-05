@@ -78,13 +78,13 @@ func (bh *beaconHelper) loop() {
 			inserted, bn, err := bh.insertLastMileBlocks()
 			numBlocksInsertedBeaconHelperCounter.Add(float64(inserted))
 			if err != nil {
-				bh.logger.Warn().Err(err).Msg("insert last mile blocks error")
+				bh.logger.Error().Err(err).Msg(WrapStagedSyncMsg("insert last mile blocks error"))
 				continue
 			}
 			bh.logger.Info().Int("inserted", inserted).
 				Uint64("end height", bn).
 				Uint32("shard", bh.bc.ShardID()).
-				Msg("insert last mile blocks")
+				Msg(WrapStagedSyncMsg("insert last mile blocks"))
 
 			close(it.doneC)
 
@@ -127,7 +127,7 @@ func (bh *beaconHelper) insertLastMileBlocks() (inserted int, bn uint64, err err
 			bn--
 			return
 		}
-		bh.logger.Info().Uint64("number", b.NumberU64()).Msg("Inserted block from beacon pub-sub")
+		bh.logger.Info().Uint64("number", b.NumberU64()).Msg(WrapStagedSyncMsg("Inserted block from beacon pub-sub"))
 
 		if bh.insertHook != nil {
 			bh.insertHook()

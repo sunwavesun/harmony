@@ -161,6 +161,11 @@ func (b *StageBodies) runBlockWorkerLoop(gbm *blockDownloadManager, wg *sync.Wai
 			if !errors.Is(err, context.Canceled) {
 				b.configs.protocol.StreamFailed(stid, "downloadRawBlocks failed")
 			}
+			utils.Logger().Error().
+				Err(err).
+				Str("stream", string(stid)).
+				Interface("block numbers", batch).
+				Msg(WrapStagedSyncMsg("downloadRawBlocks failed"))
 			err = errors.Wrap(err, "request error")
 			gbm.HandleRequestError(batch, err, stid)
 		} else {

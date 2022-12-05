@@ -34,14 +34,9 @@ func (sh *srHelper) getHashChain(bns []uint64) ([]common.Hash, []sttypes.StreamI
 			hashes, stid, err := sh.doGetBlockHashesRequest(bns)
 			if err != nil {
 				sh.logger.Warn().Err(err).Str("StreamID", string(stid)).
-					Msg("doGetBlockHashes return error")
+					Msg(WrapStagedSyncMsg("doGetBlockHashes return error"))
 				return
 			}
-			sh.logger.Info().
-				Str("StreamID", string(stid)).
-				Int("hashes", len(hashes)).
-				Interface("hashes", hashes).Int("index", index).
-				Msg("GetBlockHashesRequests response")
 			results.addResult(hashes, stid)
 		}(i)
 	}
@@ -50,15 +45,14 @@ func (sh *srHelper) getHashChain(bns []uint64) ([]common.Hash, []sttypes.StreamI
 	select {
 	case <-sh.ctx.Done():
 		sh.logger.Info().Err(sh.ctx.Err()).Int("num blocks", results.numBlocksWithResults()).
-			Msg("short range sync get hashes timed out")
+			Msg(WrapStagedSyncMsg("short range sync get hashes timed out"))
 		return nil, nil, sh.ctx.Err()
 	default:
 	}
 
-	sh.logger.Info().Msg("compute longest hash chain")
 	hashChain, wl := results.computeLongestHashChain()
 	sh.logger.Info().Int("hashChain size", len(hashChain)).Int("whitelist", len(wl)).
-		Msg("computeLongestHashChain result")
+		Msg(WrapStagedSyncMsg("computeLongestHashChain result"))
 	return hashChain, wl, nil
 }
 
@@ -109,11 +103,13 @@ func (sh *srHelper) getBlocksByHashes(hashes []common.Hash, whitelist []sttypes.
 				}
 				blocks, stid, err := sh.doGetBlocksByHashesRequest(ctx, hashes, wl)
 				if err != nil {
-					sh.logger.Err(err).Str("StreamID", string(stid)).Msg("getBlocksByHashes worker failed")
+					sh.logger.Warn().Err(err).
+						Str("StreamID", string(stid)).
+						Int("hashes", len(hashes)).
+						Int("index", index).
+						Msg(WrapStagedSyncMsg("getBlocksByHashes worker failed"))
 					m.handleResultError(hashes, stid)
 				} else {
-					sh.logger.Info().Str("StreamID", string(stid)).Int("blocks", len(blocks)).
-						Int("index", index).Msg("doGetBlocksByHashesRequest response")
 					m.addResult(hashes, blocks, stid)
 				}
 			}
@@ -128,7 +124,7 @@ func (sh *srHelper) getBlocksByHashes(hashes []common.Hash, whitelist []sttypes.
 	case <-sh.ctx.Done():
 		res, _, _ := m.getResults()
 		sh.logger.Info().Err(sh.ctx.Err()).Int("num blocks", len(res)).
-			Msg("short range sync get blocks timed out")
+			Msg(WrapStagedSyncMsg("short range sync get blocks timed out"))
 		return nil, nil, sh.ctx.Err()
 	default:
 	}
@@ -163,12 +159,17 @@ func (sh *srHelper) doGetBlockHashesRequest(bns []uint64) ([]common.Hash, sttype
 
 	hashes, stid, err := sh.syncProtocol.GetBlockHashes(ctx, bns)
 	if err != nil {
-		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to doGetBlockHashesRequest")
+		sh.logger.Warn().Err(err).
+			Interface("block numbers", bns).
+			Str("stream", string(stid)).
+			Msg(WrapStagedSyncMsg("failed to doGetBlockHashesRequest"))
 		return nil, stid, err
 	}
 	if len(hashes) != len(bns) {
 		err := errors.New("unexpected get block hashes result delivered")
-		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to doGetBlockHashesRequest")
+		sh.logger.Warn().Err(err).
+			Str("stream", string(stid)).
+			Msg(WrapStagedSyncMsg("failed to doGetBlockHashesRequest"))
 		sh.syncProtocol.StreamFailed(stid, "unexpected get block hashes result delivered")
 		return nil, stid, err
 	}
@@ -181,7 +182,7 @@ func (sh *srHelper) doGetBlocksByNumbersRequest(bns []uint64) ([]*types.Block, s
 
 	blocks, stid, err := sh.syncProtocol.GetBlocksByNumber(ctx, bns)
 	if err != nil {
-		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to doGetBlockHashesRequest")
+		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg(WrapStagedSyncMsg("failed to doGetBlockHashesRequest"))
 		return nil, stid, err
 	}
 	return blocks, stid, nil
@@ -198,7 +199,7 @@ func (sh *srHelper) doGetBlocksByHashesRequest(ctx context.Context, hashes []com
 		return nil, stid, err
 	}
 	if err := checkGetBlockByHashesResult(blocks, hashes); err != nil {
-		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg("failed to getBlockByHashes")
+		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg(WrapStagedSyncMsg("failed to getBlockByHashes"))
 		sh.syncProtocol.StreamFailed(stid, "failed to getBlockByHashes")
 		return nil, stid, err
 	}

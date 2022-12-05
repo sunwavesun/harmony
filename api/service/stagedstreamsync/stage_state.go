@@ -160,7 +160,7 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 		if err := verifyAndInsertBlock(stg.configs.bc, block); err != nil {
 			stg.configs.logger.Warn().Err(err).Uint64("cycle target block", targetHeight).
 				Uint64("block number", block.NumberU64()).
-				Msg("insert blocks failed in long range")
+				Msg(WrapStagedSyncMsg("insert blocks failed in long range"))
 			s.state.protocol.StreamFailed(streamID, "unverifiable invalid block is received from stream")
 			invalidBlockHash := block.Hash()
 			reverter.RevertTo(stg.configs.bc.CurrentBlock().NumberU64(), block.NumberU64(), invalidBlockHash, streamID)

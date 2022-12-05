@@ -70,8 +70,6 @@ func (gbm *blockDownloadManager) HandleRequestError(bns []uint64, err error, str
 	gbm.lock.Lock()
 	defer gbm.lock.Unlock()
 
-	gbm.logger.Warn().Err(err).Str("stream", string(streamID)).Msg("get blocks error")
-
 	// add requested block numbers to retries
 	for _, bn := range bns {
 		delete(gbm.requesting, bn)

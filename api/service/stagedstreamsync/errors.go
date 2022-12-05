@@ -49,3 +49,8 @@ var (
 func WrapStagedSyncError(context string) error {
 	return fmt.Errorf("[STAGED_STREAM_SYNC]: %s", context)
 }
+
+// WrapStagedSyncMsg wraps message for staged sync and returns string
+func WrapStagedSyncMsg(context string) string {
+	return fmt.Sprintf("[STAGED_STREAM_SYNC]: %s", context)
+}

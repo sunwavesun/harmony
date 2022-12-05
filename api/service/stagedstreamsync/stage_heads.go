@@ -74,7 +74,7 @@ func (heads *StageHeads) Exec(firstCycle bool, invalidBlockRevert bool, s *Stage
 
 	if currentHeight >= maxHeight {
 		utils.Logger().Info().Uint64("current number", currentHeight).Uint64("target number", maxHeight).
-			Msg("[STAGED_STREAM_SYNC] early return of long range sync")
+			Msg(WrapStagedSyncMsg("early return of long range sync"))
 		return nil
 	}
 
@@ -86,7 +86,7 @@ func (heads *StageHeads) Exec(firstCycle bool, invalidBlockRevert bool, s *Stage
 		utils.Logger().Info().
 			Uint64("max blocks per sync cycle", maxBlocksPerSyncCycle).
 			Uint64("maxPeersHeight", maxHeight).
-			Msgf("[STAGED_STREAM_SYNC] current height is ahead of target height, target height is readjusted to max peers height")
+			Msgf(WrapStagedSyncMsg("current height is ahead of target height, target height is readjusted to max peers height"))
 		targetHeight = maxHeight
 	}
 
@@ -103,7 +103,7 @@ func (heads *StageHeads) Exec(firstCycle bool, invalidBlockRevert bool, s *Stage
 	if err := s.Update(tx, targetHeight); err != nil {
 		utils.Logger().Error().
 			Err(err).
-			Msgf("[STAGED_STREAM_SYNC] saving progress for headers stage failed")
+			Msgf(WrapStagedSyncMsg("saving progress for headers stage failed"))
 		return err
 	}
 

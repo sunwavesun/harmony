@@ -42,6 +42,12 @@ func (ib *InvalidBlock) resolve() {
 }
 
 func (ib *InvalidBlock) addBadStream(bsID sttypes.StreamID) {
+	// only add uniques IDs
+	for _, stID := range ib.StreamID {
+		if stID == bsID {
+			return
+		}
+	}
 	ib.StreamID = append(ib.StreamID, bsID)
 }
 
@@ -180,7 +186,7 @@ func (s *StagedStreamSync) RevertTo(revertPoint uint64, invalidBlockNumber uint6
 		Interface("invalidBlockHash", invalidBlockHash).
 		Interface("invalidBlockStreamID", invalidBlockStreamID).
 		Uint64("revertPoint", revertPoint).
-		Msgf("[STAGED_SYNC] Reverting blocks")
+		Msgf(WrapStagedSyncMsg("Reverting blocks"))
 	s.revertPoint = &revertPoint
 	if invalidBlockNumber > 0 || invalidBlockHash != (common.Hash{}) {
 		resetBadStreams := !s.invalidBlock.Active
@@ -205,9 +211,6 @@ func (s *StagedStreamSync) SetCurrentStage(id SyncStageID) error {
 			return nil
 		}
 	}
-	utils.Logger().Error().
-		Interface("stage id", id).
-		Msgf("[STAGED_SYNC] stage not found")
 
 	return ErrStageNotFound
 }
@@ -347,6 +350,10 @@ func (s *StagedStreamSync) Run(db kv.RwDB, tx kv.RwTx, firstCycle bool) error {
 						continue
 					}
 					if err := s.revertStage(firstCycle, s.revertOrder[j], db, tx); err != nil {
+						utils.Logger().Error().
+							Err(err).
+							Interface("stage id", s.revertOrder[j].ID).
+							Msgf(WrapStagedSyncMsg("revert stage failed"))
 						return err
 					}
 				}
@@ -361,19 +368,26 @@ func (s *StagedStreamSync) Run(db kv.RwDB, tx kv.RwTx, firstCycle bool) error {
 
 		if stage.Disabled {
 			utils.Logger().Trace().
-				Msgf("[STAGED_SYNC] %s disabled. %s", stage.ID, stage.DisabledDescription)
+				Msgf(WrapStagedSyncMsg(fmt.Sprintf("%s disabled. %s", stage.ID, stage.DisabledDescription)))
 
 			s.NextStage()
 			continue
 		}
 
 		if err := s.runStage(stage, db, tx, firstCycle, s.invalidBlock.Active); err != nil {
+			utils.Logger().Error().
+				Err(err).
+				Interface("stage id", stage.ID).
+				Msgf(WrapStagedSyncMsg("stage failed"))
 			return err
 		}
 		s.NextStage()
 	}
 
 	if err := s.cleanUp(0, db, tx, firstCycle); err != nil {
+		utils.Logger().Error().
+			Err(err).
+			Msgf(WrapStagedSyncMsg("stages cleanup failed"))
 		return err
 	}
 	if err := s.SetCurrentStage(s.stages[0].ID); err != nil {
@@ -430,7 +444,7 @@ func printLogs(tx kv.RwTx, timings []Timing) error {
 	}
 	if len(logCtx) > 0 {
 		utils.Logger().Info().
-			Msgf("[STAGED_SYNC] Timings (slower than 50ms) %v", logCtx...)
+			Msgf(WrapStagedSyncMsg(fmt.Sprintf("Timings (slower than 50ms) %v", logCtx...)))
 	}
 
 	if tx == nil {
@@ -448,7 +462,7 @@ func printLogs(tx kv.RwTx, timings []Timing) error {
 			bucketSizes = append(bucketSizes, bucket, ByteCount(sz))
 		}
 		utils.Logger().Info().
-			Msgf("[STAGED_SYNC] Tables %v", bucketSizes...)
+			Msgf(WrapStagedSyncMsg(fmt.Sprintf("Tables %v", bucketSizes...)))
 	}
 	tx.CollectMetrics()
 	return nil
@@ -465,17 +479,15 @@ func (s *StagedStreamSync) runStage(stage *Stage, db kv.RwDB, tx kv.RwTx, firstC
 		utils.Logger().Error().
 			Err(err).
 			Interface("stage id", stage.ID).
-			Msgf("[STAGED_SYNC] stage failed")
+			Msgf(WrapStagedSyncMsg("stage failed"))
 		return fmt.Errorf("[%s] %w", s.LogPrefix(), err)
 	}
-	utils.Logger().Info().
-		Msgf("[STAGED_SYNC] stage %s executed successfully", stage.ID)
 
 	took := time.Since(start)
 	if took > 60*time.Second {
 		logPrefix := s.LogPrefix()
 		utils.Logger().Info().
-			Msgf("[STAGED_SYNC] [%s] DONE in %d", logPrefix, took)
+			Msgf(WrapStagedSyncMsg(fmt.Sprintf("%s:  DONE in %d", logPrefix, took)))
 
 	}
 	s.timings = append(s.timings, Timing{stage: stage.ID, took: took})
@@ -484,8 +496,6 @@ func (s *StagedStreamSync) runStage(stage *Stage, db kv.RwDB, tx kv.RwTx, firstC
 
 func (s *StagedStreamSync) revertStage(firstCycle bool, stage *Stage, db kv.RwDB, tx kv.RwTx) error {
 	start := time.Now()
-	utils.Logger().Trace().
-		Msgf("[STAGED_SYNC] Revert... stage %s", stage.ID)
 	stageState, err := s.StageState(stage.ID, tx, db)
 	if err != nil {
 		return err
@@ -510,7 +520,7 @@ func (s *StagedStreamSync) revertStage(firstCycle bool, stage *Stage, db kv.RwDB
 	if took > 60*time.Second {
 		logPrefix := s.LogPrefix()
 		utils.Logger().Info().
-			Msgf("[STAGED_SYNC] [%s] Revert done in %d", logPrefix, took)
+			Msgf(WrapStagedSyncMsg(fmt.Sprintf("%s: Revert done in %d", logPrefix, took)))
 	}
 	s.timings = append(s.timings, Timing{isRevert: true, stage: stage.ID, took: took})
 	return nil
@@ -518,8 +528,6 @@ func (s *StagedStreamSync) revertStage(firstCycle bool, stage *Stage, db kv.RwDB
 
 func (s *StagedStreamSync) pruneStage(firstCycle bool, stage *Stage, db kv.RwDB, tx kv.RwTx) error {
 	start := time.Now()
-	utils.Logger().Info().
-		Msgf("[STAGED_SYNC] CleanUp... stage %s", stage.ID)
 
 	stageState, err := s.StageState(stage.ID, tx, db)
 	if err != nil {
@@ -542,11 +550,8 @@ func (s *StagedStreamSync) pruneStage(firstCycle bool, stage *Stage, db kv.RwDB,
 	took := time.Since(start)
 	if took > 60*time.Second {
 		logPrefix := s.LogPrefix()
-		utils.Logger().Trace().
-			Msgf("[STAGED_SYNC] [%s] CleanUp done in %d", logPrefix, took)
-
 		utils.Logger().Info().
-			Msgf("[STAGED_SYNC] [%s] CleanUp done in %d", logPrefix, took)
+			Msgf(WrapStagedSyncMsg(fmt.Sprintf("%s: CleanUp done in %d", logPrefix, took)))
 	}
 	s.timings = append(s.timings, Timing{isCleanUp: true, stage: stage.ID, took: took})
 	return nil

@@ -3,20 +3,20 @@ package stagedstreamsync
 import (
 	"fmt"
 
-	//prom "github.com/harmony-one/harmony/api/service/prometheus"
+	prom "github.com/harmony-one/harmony/api/service/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 func init() {
-	// prom.PromRegistry().MustRegister(
-	// 	consensusTriggeredDownloadCounterVec,
-	// 	longRangeSyncedBlockCounterVec,
-	// 	longRangeFailInsertedBlockCounterVec,
-	// 	numShortRangeCounterVec,
-	// 	numFailedDownloadCounterVec,
-	// 	numBlocksInsertedShortRangeHistogramVec,
-	// 	numBlocksInsertedBeaconHelperCounter,
-	// )
+	prom.PromRegistry().MustRegister(
+		consensusTriggeredDownloadCounterVec,
+		longRangeSyncedBlockCounterVec,
+		longRangeFailInsertedBlockCounterVec,
+		numShortRangeCounterVec,
+		numFailedDownloadCounterVec,
+		numBlocksInsertedShortRangeHistogramVec,
+		numBlocksInsertedBeaconHelperCounter,
+	)
 }
 
 var (
