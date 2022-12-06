@@ -49,6 +49,9 @@ type (
 
 		// config for beacon config
 		BHConfig *BeaconHelperConfig
+
+		// log the stage progress
+		LogProgress bool
 	}
 
 	// BeaconHelperConfig is the extra config used for beaconHelper which uses

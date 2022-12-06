@@ -22,11 +22,13 @@ type InvalidBlock struct {
 	Active   bool
 	Number   uint64
 	Hash     common.Hash
+	IsLogged bool
 	StreamID []sttypes.StreamID
 }
 
 func (ib *InvalidBlock) set(num uint64, hash common.Hash, resetBadStreams bool) {
 	ib.Active = true
+	ib.IsLogged = false
 	ib.Number = num
 	ib.Hash = hash
 	if resetBadStreams {
@@ -36,6 +38,7 @@ func (ib *InvalidBlock) set(num uint64, hash common.Hash, resetBadStreams bool) 
 
 func (ib *InvalidBlock) resolve() {
 	ib.Active = false
+	ib.IsLogged = false
 	ib.Number = 0
 	ib.Hash = common.Hash{}
 	ib.StreamID = ib.StreamID[:0]

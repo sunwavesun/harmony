@@ -68,7 +68,7 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 	ctx, cancel := context.WithCancel(context.Background())
 
 	//TODO: use mem db should be in config file
-	stagedSyncInstance, err := CreateStagedSync(ctx, bc, false, sp, config, logger, true) //TODO: move logProgress to configs
+	stagedSyncInstance, err := CreateStagedSync(ctx, bc, false, sp, config, logger, config.LogProgress)
 	if err != nil {
 		return nil
 	}
@@ -93,7 +93,7 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 func (d *Downloader) Start() {
 	go func() {
 		d.waitForBootFinish()
-		fmt.Println("boot finished successfully")
+		fmt.Printf("boot completed for shard %d, %d streams are connected\n", d.bc.ShardID(), d.syncProtocol.NumStreams())
 		d.loop()
 	}()
 
@@ -209,8 +209,11 @@ func (d *Downloader) loop() {
 					numTriedStreams := len(d.stagedSyncInstance.invalidBlock.StreamID)
 					// if many streams couldn't solve it, then that's an unresolvable bad block
 					if numTriedStreams >= d.config.InitStreams {
-						fmt.Println("unresolvable bad block:", d.stagedSyncInstance.invalidBlock.Number)
-						//TODO: if we don't have any new or untried stream in the list, sleep or panic 
+						if !d.stagedSyncInstance.invalidBlock.IsLogged {
+							fmt.Println("unresolvable bad block:", d.stagedSyncInstance.invalidBlock.Number)
+							d.stagedSyncInstance.invalidBlock.IsLogged = true
+						}
+						//TODO: if we don't have any new or untried stream in the list, sleep or panic
 					}
 				}
 

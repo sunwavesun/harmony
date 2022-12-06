@@ -329,7 +329,8 @@ func (sm *streamManager) discoverAndSetupStream(discCtx context.Context) (int, e
 }
 
 func (sm *streamManager) discover(ctx context.Context) (<-chan libp2p_peer.AddrInfo, error) {
-	protoID := string(sm.myProtoID)
+	protoID := sm.targetProtoID()
+
 	discBatch := sm.config.DiscBatch
 	if sm.config.HiCap-sm.streams.size() < sm.config.DiscBatch {
 		discBatch = sm.config.HiCap - sm.streams.size()
@@ -346,6 +347,14 @@ func (sm *streamManager) discover(ctx context.Context) (<-chan libp2p_peer.AddrI
 	return sm.pf.FindPeers(ctx2, protoID, discBatch)
 }
 
+func (sm *streamManager) targetProtoID() string {
+	targetSpec := sm.myProtoSpec
+	if targetSpec.ShardID == shard.BeaconChainShardID { // for beacon chain, only connect to beacon nodes
+		targetSpec.BeaconNode = true
+	}
+	return string(targetSpec.ToProtoID())
+}
+
 func (sm *streamManager) setupStreamWithPeer(ctx context.Context, pid libp2p_peer.ID) error {
 	timer := prometheus.NewTimer(setupStreamDuration.With(prometheus.Labels{"topic": string(sm.myProtoID)}))
 	defer timer.ObserveDuration()
@@ -353,7 +362,7 @@ func (sm *streamManager) setupStreamWithPeer(ctx context.Context, pid libp2p_pee
 	nCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	st, err := sm.host.NewStream(nCtx, pid, protocol.ID(sm.myProtoID))
+	st, err := sm.host.NewStream(nCtx, pid, protocol.ID(sm.targetProtoID()))
 	if err != nil {
 		return err
 	}
