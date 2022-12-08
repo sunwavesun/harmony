@@ -243,6 +243,7 @@ func (d *Downloader) loop() {
 					d.bh.insertSync()
 				}
 			}
+			d.stagedSyncInstance.initSync = false;
 			initSync = false
 
 		case <-d.closeC:
