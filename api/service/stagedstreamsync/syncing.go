@@ -166,7 +166,10 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 
 	s.initSync = initSync
 
+	fmt.Println("doSync---------------->", initSync)
+
 	if err := s.checkPrerequisites(); err != nil {
+		fmt.Println("checkPrerequisites---------------->", err)
 		return 0, err
 	}
 
@@ -196,6 +199,7 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 
 		n, err := s.doSyncCycle(ctx, initSync)
 		if err != nil {
+			fmt.Println("doSyncCycle---------------->", err)
 			pl := s.promLabels()
 			pl["error"] = err.Error()
 			numFailedDownloadCounterVec.With(pl).Inc()
@@ -206,9 +210,10 @@ func (s *StagedStreamSync) doSync(downloaderContext context.Context, initSync bo
 		cancel()
 
 		totalInserted += n
-
+		fmt.Println("doSyncCycle---------------->n:", n, "------>", LastMileBlocksThreshold)
 		// if it's not long range sync, skip loop
 		if n < LastMileBlocksThreshold || !initSync {
+			fmt.Println("doSyncCycle---------------->DONE")
 			return totalInserted, nil
 		}
 	}
