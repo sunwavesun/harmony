@@ -34,7 +34,7 @@ func NewDownloaders(host p2p.Host, bcs []core.BlockChain, config Config) *Downlo
 	}
 }
 
-// Start start the downloaders
+// Start starts the downloaders
 func (ds *Downloaders) Start() {
 	if ds.config.ServerOnly {
 		// Run in server only mode. Do not start downloaders.
@@ -46,7 +46,7 @@ func (ds *Downloaders) Start() {
 	}
 }
 
-// Close close the downloaders
+// Close closes the downloaders
 func (ds *Downloaders) Close() {
 	if ds.config.ServerOnly {
 		// Run in server only mode. Downloaders not started.
@@ -66,7 +66,7 @@ func (ds *Downloaders) DownloadAsync(shardID uint32) {
 	}
 }
 
-// GetShardDownloader get the downloader with the given shard ID
+// GetShardDownloader returns the downloader with the given shard ID
 func (ds *Downloaders) GetShardDownloader(shardID uint32) *Downloader {
 	return ds.ds[shardID]
 }
@@ -81,8 +81,7 @@ func (ds *Downloaders) NumPeers() map[uint32]int {
 	return res
 }
 
-// SyncStatus returns whether the given shard is doing syncing task and the target block
-// number.
+// SyncStatus returns whether the given shard is doing syncing task and the target block number
 func (ds *Downloaders) SyncStatus(shardID uint32) (bool, uint64, uint64) {
 	d, ok := ds.ds[shardID]
 	if !ok {

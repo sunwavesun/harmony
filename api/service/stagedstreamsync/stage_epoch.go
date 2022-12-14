@@ -133,6 +133,7 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 		return 0, errors.Wrap(err, "epoch sync getBlocksByHashes")
 	}
 	///////////////////////////////////////////////////////
+	// TODO: check this
 	// blocks, streamID, err := sh.getBlocksChain(bns)
 	// if err != nil {
 	// 	return 0, errors.Wrap(err, "getHashChain")
@@ -150,7 +151,7 @@ func (sr *StageEpoch) doShortRangeSyncForEpochSync(s *StageState) (int, error) {
 		sh.removeStreams(streamID) // Data provided by remote nodes is corrupted
 		return n, err
 	}
-	if n>0 {
+	if n > 0 {
 		utils.Logger().Info().Int("blocks inserted", n).Msg("Insert block success")
 	}
 	return n, nil

@@ -16,7 +16,7 @@ const (
 
 	LastMileBlocksThreshold int = 10
 
-	// soft cap of size in resultQueue. When the queue size is larger than this limit,
+	// SoftQueueCap is the soft cap of size in resultQueue. When the queue size is larger than this limit,
 	// no more request will be assigned to workers to wait for InsertChain to finish.
 	SoftQueueCap int = 100
 

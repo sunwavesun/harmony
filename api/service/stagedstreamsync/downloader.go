@@ -89,7 +89,7 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 	}
 }
 
-// Start start the downloader
+// Start starts the downloader
 func (d *Downloader) Start() {
 	go func() {
 		d.waitForBootFinish()
@@ -102,7 +102,7 @@ func (d *Downloader) Start() {
 	}
 }
 
-// Close close the downloader
+// Close closes the downloader
 func (d *Downloader) Close() {
 	close(d.closeC)
 	d.cancel()
@@ -127,7 +127,7 @@ func (d *Downloader) NumPeers() int {
 	return d.syncProtocol.NumStreams()
 }
 
-// IsSyncing return the current sync status
+// IsSyncing returns the current sync status
 func (d *Downloader) SyncStatus() (bool, uint64, uint64) {
 	syncing, target := d.stagedSyncInstance.status.get()
 	if !syncing {
@@ -136,19 +136,19 @@ func (d *Downloader) SyncStatus() (bool, uint64, uint64) {
 	return syncing, target, 0
 }
 
-// SubscribeDownloadStarted subscribe download started
+// SubscribeDownloadStarted subscribes download started
 func (d *Downloader) SubscribeDownloadStarted(ch chan struct{}) event.Subscription {
 	d.stagedSyncInstance.evtDownloadStartedSubscribed = true
 	return d.stagedSyncInstance.evtDownloadStarted.Subscribe(ch)
 }
 
-// SubscribeDownloadFinished subscribe the download finished
+// SubscribeDownloadFinished subscribes the download finished
 func (d *Downloader) SubscribeDownloadFinished(ch chan struct{}) event.Subscription {
 	d.stagedSyncInstance.evtDownloadFinishedSubscribed = true
 	return d.stagedSyncInstance.evtDownloadFinished.Subscribe(ch)
 }
 
-// waitForBootFinish wait for stream manager to finish the initial discovery and have
+// waitForBootFinish waits for stream manager to finish the initial discovery and have
 // enough peers to start downloader
 func (d *Downloader) waitForBootFinish() {
 	evtCh := make(chan streammanager.EvtStreamAdded, 1)

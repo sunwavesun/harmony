@@ -75,13 +75,6 @@ func (gbm *blockDownloadManager) HandleRequestError(bns []uint64, err error, str
 		delete(gbm.requesting, bn)
 		gbm.retries.push(bn)
 	}
-
-	// remove results from result queue by the stream and add back to retries
-	// removed := gbm.rq.removeResultsByStreamID(streamID)
-	// for _, bn := range removed {
-	// 	delete(gbm.processing, bn)
-	// 	gbm.retries.push(bn)
-	// }
 }
 
 // HandleRequestResult handles get blocks result
@@ -145,7 +138,7 @@ func (gbm *blockDownloadManager) getBatchFromRetries(cap int) []uint64 {
 	return requestBNs
 }
 
-// getBatchFromRetries get the block number batch to be requested from unprocessed.
+// getBatchFromUnprocessed returns a batch of block numbers to be requested from unprocessed.
 func (gbm *blockDownloadManager) getBatchFromUnprocessed(cap int) []uint64 {
 	var (
 		requestBNs []uint64

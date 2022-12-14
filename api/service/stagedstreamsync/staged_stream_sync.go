@@ -560,7 +560,7 @@ func (s *StagedStreamSync) pruneStage(firstCycle bool, stage *Stage, db kv.RwDB,
 	return nil
 }
 
-// DisableAllStages - including their reverts
+// DisableAllStages disables all stages including their reverts
 func (s *StagedStreamSync) DisableAllStages() []SyncStageID {
 	var backupEnabledIds []SyncStageID
 	for i := range s.stages {
@@ -594,10 +594,4 @@ func (s *StagedStreamSync) EnableStages(ids ...SyncStageID) {
 			s.stages[i].Disabled = false
 		}
 	}
-}
-
-// GetActivePeerNumber returns the number of active peers
-func (ss *StagedStreamSync) GetActiveStreams() int {
-	//TODO: return active streams
-	return 0
 }

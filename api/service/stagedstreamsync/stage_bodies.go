@@ -189,7 +189,7 @@ func (b *StageBodies) runBlockWorkerLoop(gbm *blockDownloadManager, wg *sync.Wai
 	}
 }
 
-// runBlockWorkerLoop creates a work loop for download blocks
+// redownloadBadBlock tries to redownload the bad block from other streams
 func (b *StageBodies) redownloadBadBlock(s *StageState) error {
 
 	batch := make([]uint64, 1)
@@ -264,8 +264,7 @@ func validateGetBlocksResult(requested []uint64, result []*types.Block) error {
 	return nil
 }
 
-// addBlockResults adds the blocks to the result queue to be processed by insertChainLoop.
-// If a nil block is detected in the block list, will not process further blocks.
+// saveBlocks saves the blocks into db
 func (b *StageBodies) saveBlocks(tx kv.RwTx, bns []uint64, blockBytes [][]byte, sigBytes [][]byte, loopID int, stid sttypes.StreamID) error {
 
 	tx, err := b.configs.blockDBs[loopID].BeginRw(context.Background())

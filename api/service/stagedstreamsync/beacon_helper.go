@@ -94,7 +94,7 @@ func (bh *beaconHelper) loop() {
 	}
 }
 
-// insertSync triggers the insert last mile without blocking
+// insertAsync triggers the insert last mile without blocking
 func (bh *beaconHelper) insertAsync() {
 	select {
 	case bh.insertC <- insertTask{

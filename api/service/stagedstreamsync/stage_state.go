@@ -210,16 +210,6 @@ func (stg *StageStates) Exec(firstCycle bool, invalidBlockRevert bool, s *StageS
 
 	}
 
-	// insert blocks
-	// insert the blocks to chain. Return when the target block number is reached.
-	// blockResults := s.state.gbm.PullContinuousBlocks(BlocksPerInsertion)
-	// s.state.inserted = 0
-	// if len(blockResults) > 0 {
-	// 	lbls := s.state.promLabels()
-	// 	nInserted := stg.processBlocks(blockResults, s.state.gbm, s.state.protocol, lbls, targetHeight)
-	// 	s.state.inserted = nInserted
-	// }
-
 	if useInternalTx {
 		if err := tx.Commit(); err != nil {
 			return err

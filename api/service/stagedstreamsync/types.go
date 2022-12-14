@@ -117,7 +117,7 @@ func (rq *resultQueue) popBlockResults(expStartBN uint64, cap int) ([]*blockResu
 	return res, stales
 }
 
-// removeResultsByStreamID remove the block results of the given stream, return the block
+// removeResultsByStreamID removes the block results of the given stream, returns the block
 // number removed from the queue
 func (rq *resultQueue) removeResultsByStreamID(stid sttypes.StreamID) []uint64 {
 	rq.lock.Lock()
@@ -250,27 +250,23 @@ func (bs *blocksByNumber) len() int {
 	return bs.q.Len()
 }
 
-// priorityQueue is a priorityQueue with lowest block number with highest priority
+// priorityQueue is a priority queue with lowest block number with highest priority
 type priorityQueue []bnPrioritizedItem
 
-// resultQueue implements heap interface
 func (q priorityQueue) Len() int {
 	return len(q)
 }
 
-// resultQueue implements heap interface
 func (q priorityQueue) Less(i, j int) bool {
 	bn1 := q[i].getBlockNumber()
 	bn2 := q[j].getBlockNumber()
 	return bn1 < bn2 // small block number has higher priority
 }
 
-// resultQueue implements heap interface
 func (q priorityQueue) Swap(i, j int) {
 	q[i], q[j] = q[j], q[i]
 }
 
-// resultQueue implements heap interface
 func (q *priorityQueue) Push(x interface{}) {
 	item, ok := x.(bnPrioritizedItem)
 	if !ok {
@@ -279,7 +275,6 @@ func (q *priorityQueue) Push(x interface{}) {
 	*q = append(*q, item)
 }
 
-// resultQueue implements heap interface
 func (q *priorityQueue) Pop() interface{} {
 	prev := *q
 	n := len(prev)

@@ -39,7 +39,7 @@ func GetBucketName(bucketName string, isBeacon bool) string {
 	return name
 }
 
-// GetStageProgress retrieves saved progress of given sync stage from the database
+// GetStageProgress retrieves saved progress of a given sync stage from the database
 func GetStageProgress(db kv.Getter, stage SyncStageID, isBeacon bool) (uint64, error) {
 	stgID := GetStageID(stage, isBeacon, false)
 	v, err := db.GetOne(kv.SyncStageProgress, stgID)

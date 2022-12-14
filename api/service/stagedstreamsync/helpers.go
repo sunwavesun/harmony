@@ -36,7 +36,7 @@ func divideCeil(x, y int) int {
 	return int(math.Ceil(fVal))
 }
 
-// computeBlockNumberByMaxVote compute the target block number by max vote.
+// computeBlockNumberByMaxVote computes the target block number by max vote.
 func computeBlockNumberByMaxVote(votes map[sttypes.StreamID]uint64) uint64 {
 	var (
 		nm     = make(map[uint64]int)

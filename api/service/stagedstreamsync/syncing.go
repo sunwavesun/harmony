@@ -9,6 +9,7 @@ import (
 	"github.com/harmony-one/harmony/core"
 	"github.com/harmony-one/harmony/internal/utils"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
+	"github.com/harmony-one/harmony/shard"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/mdbx"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
@@ -21,10 +22,6 @@ const (
 	BlocksBucket          = "BlockBodies"
 	BlockSignaturesBucket = "BlockSignatures"
 	StageProgressBucket   = "StageProgress"
-	// BlockHashesBucket               = "BlockHashes"
-	// BeaconBlockHashesBucket         = "BeaconBlockHashes"
-	// BeaconDownloadedBlocksBucket    = "BeaconBlockBodies" // Beacon Block bodies are downloaded, TxHash and UncleHash are getting verified
-	// LastMileBlocksBucket            = "LastMileBlocks"    // last mile blocks to catch up with the consensus
 
 	// cache db keys
 	LastBlockHeight = "LastBlockHeight"
@@ -32,10 +29,6 @@ const (
 )
 
 var Buckets = []string{
-	//BlockHashesBucket,
-	//BeaconBlockHashesBucket,
-	// BeaconDownloadedBlocksBucket,
-	// LastMileBlocksBucket,
 	BlocksBucket,
 	BlockSignaturesBucket,
 	StageProgressBucket,
@@ -51,7 +44,7 @@ func CreateStagedSync(ctx context.Context,
 	logProgress bool,
 ) (*StagedStreamSync, error) {
 
-	isBeacon := bc.ShardID() == bc.Engine().Beaconchain().ShardID()
+	isBeacon := bc.ShardID() == shard.BeaconChainShardID
 
 	var mainDB kv.RwDB
 	dbs := make([]kv.RwDB, config.Concurrency)
@@ -100,7 +93,7 @@ func CreateStagedSync(ctx context.Context,
 	), nil
 }
 
-// init sync loop main database and create buckets
+// initDB inits the sync loop main database and create buckets
 func initDB(ctx context.Context, mainDB kv.RwDB, dbs []kv.RwDB, concurrency int) error {
 
 	// create buckets for mainDB
@@ -221,10 +214,7 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 
 	var totalInserted int
 
-	//for {
 	s.inserted = 0
-	//ctx, cancel := context.WithCancel(s.ctx)
-	//s.ctx = ctx
 	startHead := s.bc.CurrentBlock().NumberU64()
 	canRunCycleInOneTransaction := false
 
@@ -242,7 +232,6 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 	// Do one cycle of staged sync
 	initialCycle := s.currentCycle.Number == 0
 	if err := s.Run(s.DB(), tx, initialCycle); err != nil {
-		// cancel()
 		utils.Logger().Error().
 			Err(err).
 			Bool("isBeacon", s.isBeacon).
@@ -251,7 +240,6 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 			Msgf(WrapStagedSyncMsg("sync cycle failed"))
 		return totalInserted, err
 	}
-	//cancel()
 
 	totalInserted += s.inserted
 
@@ -260,7 +248,6 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 	s.currentCycle.lock.Unlock()
 
 	// calculating sync speed (blocks/second)
-	//currHead := s.bc.CurrentBlock().NumberU64()
 	if s.LogProgress && s.inserted > 0 {
 		dt := time.Now().Sub(startTime).Seconds()
 		speed := float64(0)
@@ -271,10 +258,6 @@ func (s *StagedStreamSync) doSyncCycle(ctx context.Context, initSync bool) (int,
 		fmt.Println("sync speed:", syncSpeed, "blocks/s")
 	}
 
-	// if s.inserted < LastMileBlocksThreshold || !initSync {
-	// 	return totalInserted, nil
-	// }
-	//}
 	return totalInserted, nil
 }
 
@@ -296,7 +279,7 @@ func (s *StagedStreamSync) checkPrerequisites() error {
 	return s.checkHaveEnoughStreams()
 }
 
-// estimateCurrentNumber roughly estimate the current block number.
+// estimateCurrentNumber roughly estimates the current block number.
 // The block number does not need to be exact, but just a temporary target of the iteration
 func (s *StagedStreamSync) estimateCurrentNumber() (uint64, error) {
 	var (
