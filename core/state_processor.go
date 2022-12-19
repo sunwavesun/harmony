@@ -31,9 +31,11 @@ import (
 	"github.com/harmony-one/harmony/core/state"
 	"github.com/harmony-one/harmony/core/types"
 	"github.com/harmony-one/harmony/core/vm"
+	nodeconfig "github.com/harmony-one/harmony/internal/configs/node"
 	"github.com/harmony-one/harmony/internal/params"
 	"github.com/harmony-one/harmony/internal/utils"
 	"github.com/harmony-one/harmony/shard"
+	"github.com/harmony-one/harmony/staking/effective"
 	"github.com/harmony-one/harmony/staking/slash"
 	staking "github.com/harmony-one/harmony/staking/types"
 	"github.com/pkg/errors"
@@ -49,7 +51,8 @@ const (
 // StateProcessor implements Processor.
 type StateProcessor struct {
 	config      *params.ChainConfig     // Chain configuration options
-	bc          BlockChain              // Canonical block chain
+	bc          BlockChain              // Canonical blockchain
+	beacon      BlockChain              // Beacon chain
 	engine      consensus_engine.Engine // Consensus engine used for block rewards
 	resultCache *lru.Cache              // Cache for result after a certain block is processed
 }
@@ -67,12 +70,19 @@ type ProcessorResult struct {
 
 // NewStateProcessor initialises a new StateProcessor.
 func NewStateProcessor(
-	config *params.ChainConfig, bc BlockChain, engine consensus_engine.Engine,
+	config *params.ChainConfig, bc BlockChain, beacon BlockChain, engine consensus_engine.Engine,
 ) *StateProcessor {
+	if bc == nil {
+		panic("bc is nil")
+	}
+	if beacon == nil {
+		panic("beacon is nil")
+	}
 	resultCache, _ := lru.New(resultCacheLimit)
 	return &StateProcessor{
 		config:      config,
 		bc:          bc,
+		beacon:      beacon,
 		engine:      engine,
 		resultCache: resultCache,
 	}
@@ -175,6 +185,10 @@ func (p *StateProcessor) Process(
 		}
 	}
 
+	if err := MayTestnetShardReduction(p.bc, statedb, header); err != nil {
+		return nil, nil, nil, nil, 0, nil, statedb, err
+	}
+
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	sigsReady := make(chan bool)
 	go func() {
@@ -182,7 +196,9 @@ func (p *StateProcessor) Process(
 		sigsReady <- true
 	}()
 	_, payout, err := p.engine.Finalize(
-		p.bc, header, statedb, block.Transactions(),
+		p.bc,
+		p.beacon,
+		header, statedb, block.Transactions(),
 		receipts, outcxs, incxs, block.StakingTransactions(), slashes, sigsReady, func() uint64 { return header.ViewID().Uint64() },
 	)
 	if err != nil {
@@ -424,4 +440,51 @@ func StakingToMessage(
 	}
 	msg.SetType(types.StakingTypeMap[stkType])
 	return msg, nil
+}
+
+// MayTestnetShardReduction handles the change in the number of Shards. It will mark the affected validator as inactive.
+// This function does not handle all cases, only for ShardNum from 4 to 2.
+func MayTestnetShardReduction(bc ChainContext, statedb *state.DB, header *block.Header) error {
+	isBeaconChain := header.ShardID() == shard.BeaconChainShardID
+	isLastBlock := shard.Schedule.IsLastBlock(header.Number().Uint64())
+	isTestnet := nodeconfig.GetDefaultConfig().GetNetworkType() == nodeconfig.Testnet
+	if !(isTestnet && isBeaconChain && isLastBlock) {
+		return nil
+	}
+	curInstance := shard.Schedule.InstanceForEpoch(header.Epoch())
+	nextEpoch := big.NewInt(header.Epoch().Int64() + 1)
+	nextInstance := shard.Schedule.InstanceForEpoch(nextEpoch)
+	curNumShards := curInstance.NumShards()
+	nextNumShards := nextInstance.NumShards()
+
+	if curNumShards == nextNumShards {
+		return nil
+	}
+
+	if curNumShards != 4 && nextNumShards != 2 {
+		return errors.New("can only handle the reduction from 4 to 2")
+	}
+	addresses, err := bc.ReadValidatorList()
+	if err != nil {
+		return err
+	}
+	for _, address := range addresses {
+		validator, err := statedb.ValidatorWrapper(address, true, false)
+		if err != nil {
+			return err
+		}
+		if validator.Status == effective.Inactive || validator.Status == effective.Banned {
+			continue
+		}
+		for _, pubKey := range validator.SlotPubKeys {
+			curShard := new(big.Int).Mod(pubKey.Big(), big.NewInt(int64(curNumShards))).Uint64()
+			nextShard := new(big.Int).Mod(pubKey.Big(), big.NewInt(int64(nextNumShards))).Uint64()
+			if curShard >= uint64(nextNumShards) || curShard != nextShard {
+				validator.Status = effective.Inactive
+				break
+			}
+		}
+	}
+	statedb.IntermediateRoot(bc.Config().IsS3(header.Epoch()))
+	return nil
 }

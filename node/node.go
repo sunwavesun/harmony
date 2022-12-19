@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math/big"
 	"os"
 	"runtime/pprof"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/harmony-one/harmony/consensus/engine"
 	"github.com/harmony-one/harmony/internal/shardchain/tikv_manage"
 	"github.com/harmony-one/harmony/internal/tikv"
 	"github.com/harmony-one/harmony/internal/tikv/redis_helper"
@@ -44,7 +44,6 @@ import (
 	"github.com/harmony-one/harmony/core/rawdb"
 	"github.com/harmony-one/harmony/core/types"
 	"github.com/harmony-one/harmony/crypto/bls"
-	"github.com/harmony-one/harmony/internal/chain"
 	common2 "github.com/harmony-one/harmony/internal/common"
 	nodeconfig "github.com/harmony-one/harmony/internal/configs/node"
 	"github.com/harmony-one/harmony/internal/params"
@@ -92,13 +91,9 @@ type Node struct {
 	pendingCXMutex        sync.Mutex
 	crosslinks            *crosslinks.Crosslinks // Memory storage for crosslink processing.
 	// Shard databases
-	shardChains shardchain.Collection
-	SelfPeer    p2p.Peer
-	// TODO: Neighbors should store only neighbor nodes in the same shard
-	Neighbors  sync.Map   // All the neighbor nodes, key is the sha256 of Peer IP/Port, value is the p2p.Peer
-	stateMutex sync.Mutex // mutex for change node state
-	// BeaconNeighbors store only neighbor nodes in the beacon chain shard
-	BeaconNeighbors  sync.Map // All the neighbor nodes, key is the sha256 of Peer IP/Port, value is the p2p.Peer
+	shardChains      shardchain.Collection
+	SelfPeer         p2p.Peer
+	stateMutex       sync.Mutex // mutex for change node state
 	TxPool           *core.TxPool
 	CxPool           *core.CxPool // pool for missing cross shard receipts resend
 	Worker           *worker.Worker
@@ -229,18 +224,12 @@ func (node *Node) tryBroadcastStaking(stakingTx *staking.StakingTransaction) {
 
 // Add new transactions to the pending transaction list.
 func (node *Node) addPendingTransactions(newTxs types.Transactions) []error {
-	if inSync, _, _ := node.SyncStatus(node.Blockchain().ShardID()); !inSync && node.NodeConfig.GetNetworkType() == nodeconfig.Mainnet {
-		utils.Logger().Debug().
-			Int("length of newTxs", len(newTxs)).
-			Msg("[addPendingTransactions] Node out of sync, ignoring transactions")
-		return nil
-	}
-
-	// in tikv mode, reader only accept the pending transaction from writer node, ignore the p2p message
-	if node.HarmonyConfig.General.RunElasticMode && node.HarmonyConfig.TiKV.Role == tikv.RoleReader {
-		log.Printf("skip reader addPendingTransactions: %#v", newTxs)
-		return nil
-	}
+	// if inSync, _, _ := node.SyncStatus(node.Blockchain().ShardID()); !inSync && node.NodeConfig.GetNetworkType() == nodeconfig.Mainnet {
+	// 	utils.Logger().Debug().
+	// 		Int("length of newTxs", len(newTxs)).
+	// 		Msg("[addPendingTransactions] Node out of sync, ignoring transactions")
+	// 	return nil
+	// }
 
 	poolTxs := types.PoolTransactions{}
 	errs := []error{}
@@ -994,7 +983,8 @@ func (node *Node) GetSyncID() [SyncIDLength]byte {
 func New(
 	host p2p.Host,
 	consensusObj *consensus.Consensus,
-	chainDBFactory shardchain.DBFactory,
+	engine engine.Engine,
+	collection *shardchain.CollectionImpl,
 	blacklist map[common.Address]struct{},
 	allowedTxs map[common.Address]core.AllowedTxData,
 	localAccounts []common.Address,
@@ -1022,12 +1012,6 @@ func New(
 	networkType := node.NodeConfig.GetNetworkType()
 	chainConfig := networkType.ChainConfig()
 	node.chainConfig = chainConfig
-
-	engine := chain.NewEngine()
-
-	collection := shardchain.NewCollection(
-		harmonyconfig, chainDBFactory, &core.GenesisInitializer{NetworkType: node.NodeConfig.GetNetworkType()}, engine, &chainConfig,
-	)
 
 	for shardID, archival := range isArchival {
 		if archival {
@@ -1090,14 +1074,14 @@ func New(
 			if node.Blockchain().IsTikvWriterMaster() {
 				err := redis_helper.PublishTxPoolUpdate(uint32(harmonyconfig.General.ShardID), tx, local)
 				if err != nil {
-					utils.Logger().Info().Err(err).Msg("redis publish txpool update error")
+					utils.Logger().Warn().Err(err).Msg("redis publish txpool update error")
 				}
 			}
 		}
 
 		node.TxPool = core.NewTxPool(txPoolConfig, node.Blockchain().Config(), blockchain, node.TransactionErrorSink)
 		node.CxPool = core.NewCxPool(core.CxPoolSize)
-		node.Worker = worker.New(node.Blockchain().Config(), blockchain, engine)
+		node.Worker = worker.New(node.Blockchain().Config(), blockchain, beaconChain, engine)
 
 		node.deciderCache, _ = lru.New(16)
 		node.committeeCache, _ = lru.New(16)
@@ -1105,7 +1089,6 @@ func New(
 		node.pendingCXReceipts = map[string]*types.CXReceiptsProof{}
 		node.proposedBlock = map[uint64]*types.Block{}
 		node.Consensus.VerifiedNewBlock = make(chan *types.Block, 1)
-		engine.SetBeaconchain(beaconChain)
 		// the sequence number is the next block number to be added in consensus protocol, which is
 		// always one more than current chain header block
 		node.Consensus.SetBlockNum(blockchain.CurrentBlock().NumberU64() + 1)
@@ -1238,30 +1221,6 @@ func (node *Node) InitConsensusWithValidators() (err error) {
 		}
 	}
 	return nil
-}
-
-// AddPeers adds neighbors nodes
-func (node *Node) AddPeers(peers []*p2p.Peer) int {
-	for _, p := range peers {
-		key := fmt.Sprintf("%s:%s:%s", p.IP, p.Port, p.PeerID)
-		_, ok := node.Neighbors.LoadOrStore(key, *p)
-		if !ok {
-			// !ok means new peer is stored
-			node.host.AddPeer(p)
-			continue
-		}
-	}
-
-	return node.host.GetPeerCount()
-}
-
-// AddBeaconPeer adds beacon chain neighbors nodes
-// Return false means new neighbor peer was added
-// Return true means redundant neighbor peer wasn't added
-func (node *Node) AddBeaconPeer(p *p2p.Peer) bool {
-	key := fmt.Sprintf("%s:%s:%s", p.IP, p.Port, p.PeerID)
-	_, ok := node.BeaconNeighbors.LoadOrStore(key, *p)
-	return ok
 }
 
 func (node *Node) initNodeConfiguration() (service.NodeConfig, chan p2p.Peer, error) {
@@ -1436,13 +1395,13 @@ func (node *Node) syncFromTiKVWriter() {
 			select {
 			case <-doneChan:
 				return
-			case <-time.After(5 * time.Minute):
+			case <-time.After(2 * time.Minute):
 				buf := bytes.NewBuffer(nil)
 				err := pprof.Lookup("goroutine").WriteTo(buf, 1)
 				if err != nil {
 					panic(err)
 				}
-				err = ioutil.WriteFile(fmt.Sprintf("/tmp/%s", time.Now().Format("hmy_0102150405.error.log")), buf.Bytes(), 0644)
+				err = ioutil.WriteFile(fmt.Sprintf("/local/%s", time.Now().Format("hmy_0102150405.error.log")), buf.Bytes(), 0644)
 				if err != nil {
 					panic(err)
 				}
@@ -1452,8 +1411,7 @@ func (node *Node) syncFromTiKVWriter() {
 		}()
 		defer close(doneChan)
 
-		err := bc.SyncFromTiKVWriter(blkNum, logs)
-		if err != nil {
+		if err := bc.SyncFromTiKVWriter(blkNum, logs); err != nil {
 			utils.Logger().Warn().
 				Err(err).
 				Msg("cannot sync block from tikv writer")
