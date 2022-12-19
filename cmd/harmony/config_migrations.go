@@ -295,6 +295,14 @@ func init() {
 		return confTree
 	}
 
+	migrations["2.5.8"] = func(confTree *toml.Tree) *toml.Tree {
+		if confTree.Get("P2P.WaitForEachPeerToConnect") == nil {
+			confTree.Set("P2P.WaitForEachPeerToConnect", defaultConfig.P2P.WaitForEachPeerToConnect)
+		}
+		confTree.Set("Version", "2.5.9")
+		return confTree
+	}
+
 	// check that the latest version here is the same as in default.go
 	largestKey := getNextVersion(migrations)
 	if largestKey != tomlConfigVersion {
