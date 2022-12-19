@@ -76,7 +76,8 @@ func createSyncConfig(syncConfig *SyncConfig, peers []p2p.Peer, shardID uint32, 
 
 	if !waitForEachPeerToConnect {
 		var wg sync.WaitGroup
-		for _, peer := range peers {
+		ps := peers[:targetSize]
+		for _, peer := range ps {
 			wg.Add(1)
 			go func(peer p2p.Peer) {
 				defer wg.Done()
