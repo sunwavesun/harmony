@@ -219,7 +219,7 @@ func (node *Node) doBeaconSyncing() {
 				continue
 			}
 
-			if err := node.epochSync.CreateSyncConfig(peers, shard.BeaconChainShardID); err != nil {
+			if err := node.epochSync.CreateSyncConfig(peers, shard.BeaconChainShardID, node.HarmonyConfig.P2P.WaitForEachPeerToConnect); err != nil {
 				utils.Logger().Warn().Err(err).Msg("[EPOCHSYNC] cannot create beacon sync config")
 				continue
 			}
@@ -260,7 +260,7 @@ func (node *Node) doSync(bc core.BlockChain, worker *worker.Worker, willJoinCons
 				Msg("cannot retrieve syncing peers")
 			return
 		}
-		if err := node.stateSync.CreateSyncConfig(peers, shardID); err != nil {
+		if err := node.stateSync.CreateSyncConfig(peers, shardID, node.HarmonyConfig.P2P.WaitForEachPeerToConnect); err != nil {
 			utils.Logger().Warn().
 				Err(err).
 				Interface("peers", peers).
@@ -528,7 +528,7 @@ func (node *Node) CalculateResponse(request *downloader_pb.DownloaderRequest, in
 		} else {
 			response.Type = downloader_pb.DownloaderResponse_FAIL
 			syncPort := legacysync.GetSyncingPort(port)
-			client := legdownloader.ClientSetup(ip, syncPort)
+			client := legdownloader.ClientSetup(ip, syncPort, false)
 			if client == nil {
 				utils.Logger().Warn().
 					Str("ip", ip).

@@ -361,9 +361,9 @@ func (peerConfig *SyncPeerConfig) GetBlocks(hashes [][]byte) ([][]byte, error) {
 }
 
 // CreateSyncConfig creates SyncConfig for StateSync object.
-func (ss *StateSync) CreateSyncConfig(peers []p2p.Peer, shardID uint32) error {
+func (ss *StateSync) CreateSyncConfig(peers []p2p.Peer, shardID uint32, waitForEachPeerToConnect bool) error {
 	var err error
-	ss.syncConfig, err = createSyncConfig(ss.syncConfig, peers, shardID)
+	ss.syncConfig, err = createSyncConfig(ss.syncConfig, peers, shardID, waitForEachPeerToConnect)
 	return err
 }
 

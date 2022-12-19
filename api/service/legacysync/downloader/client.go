@@ -20,9 +20,12 @@ type Client struct {
 }
 
 // ClientSetup setups a Client given ip and port.
-func ClientSetup(ip, port string) *Client {
+func ClientSetup(ip, port string, withBlock bool) *Client {
 	client := Client{}
 	client.opts = append(client.opts, grpc.WithInsecure())
+	if withBlock {
+		client.opts = append(client.opts, grpc.WithInsecure(), grpc.WithBlock())
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

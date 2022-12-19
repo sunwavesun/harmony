@@ -201,8 +201,8 @@ func (ss *EpochSync) processWithPayload(payload [][]byte, bc core.BlockChain) er
 }
 
 // CreateSyncConfig creates SyncConfig for StateSync object.
-func (ss *EpochSync) CreateSyncConfig(peers []p2p.Peer, shardID uint32) error {
+func (ss *EpochSync) CreateSyncConfig(peers []p2p.Peer, shardID uint32, waitForEachPeerToConnect bool) error {
 	var err error
-	ss.syncConfig, err = createSyncConfig(ss.syncConfig, peers, shardID)
+	ss.syncConfig, err = createSyncConfig(ss.syncConfig, peers, shardID, waitForEachPeerToConnect)
 	return err
 }

@@ -51,7 +51,7 @@ func getMaxPeerHeight(syncConfig *SyncConfig) uint64 {
 	return maxHeight
 }
 
-func createSyncConfig(syncConfig *SyncConfig, peers []p2p.Peer, shardID uint32) (*SyncConfig, error) {
+func createSyncConfig(syncConfig *SyncConfig, peers []p2p.Peer, shardID uint32, waitForEachPeerToConnect bool) (*SyncConfig, error) {
 	// sanity check to ensure no duplicate peers
 	if err := checkPeersDuplicity(peers); err != nil {
 		return syncConfig, err
@@ -74,23 +74,45 @@ func createSyncConfig(syncConfig *SyncConfig, peers []p2p.Peer, shardID uint32) 
 	}
 	syncConfig = NewSyncConfig(shardID, nil)
 
-	var connectedPeers int
-	for _, peer := range peers {
-		client := downloader.ClientSetup(peer.IP, peer.Port)
-		if client == nil || !client.IsReady() {
-			continue
+	if !waitForEachPeerToConnect {
+		var wg sync.WaitGroup
+		for _, peer := range peers {
+			wg.Add(1)
+			go func(peer p2p.Peer) {
+				defer wg.Done()
+				client := downloader.ClientSetup(peer.IP, peer.Port, false)
+				if client == nil {
+					return
+				}
+				peerConfig := &SyncPeerConfig{
+					ip:     peer.IP,
+					port:   peer.Port,
+					client: client,
+				}
+				syncConfig.AddPeer(peerConfig)
+			}(peer)
 		}
-		peerConfig := &SyncPeerConfig{
-			ip:     peer.IP,
-			port:   peer.Port,
-			client: client,
-		}
-		syncConfig.AddPeer(peerConfig)
-		connectedPeers++
-		if connectedPeers >= targetSize {
-			break
+		wg.Wait()
+	} else {
+		var connectedPeers int
+		for _, peer := range peers {
+			client := downloader.ClientSetup(peer.IP, peer.Port, true)
+			if client == nil || !client.IsReady() {
+				continue
+			}
+			peerConfig := &SyncPeerConfig{
+				ip:     peer.IP,
+				port:   peer.Port,
+				client: client,
+			}
+			syncConfig.AddPeer(peerConfig)
+			connectedPeers++
+			if connectedPeers >= targetSize {
+				break
+			}
 		}
 	}
+
 	utils.Logger().Info().
 		Int("len", len(syncConfig.peers)).
 		Uint32("shardID", shardID).
