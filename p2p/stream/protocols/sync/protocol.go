@@ -59,13 +59,12 @@ type (
 
 	// Config is the sync protocol config
 	Config struct {
-		Chain                engine.ChainReader
-		Host                 libp2p_host.Host
-		Discovery            discovery.Discovery
-		ShardID              nodeconfig.ShardID
-		Network              nodeconfig.NetworkType
-		BeaconNode           bool
-		MaxAdvertiseWaitTime int
+		Chain      engine.ChainReader
+		Host       libp2p_host.Host
+		Discovery  discovery.Discovery
+		ShardID    nodeconfig.ShardID
+		Network    nodeconfig.NetworkType
+		BeaconNode bool
 		// stream manager config
 		SmSoftLowCap int
 		SmHardLowCap int
@@ -187,10 +186,6 @@ func (p *Protocol) HandleStream(raw libp2p_network.Stream) {
 func (p *Protocol) advertiseLoop() {
 	for {
 		sleep := p.advertise()
-		maxSleepTime := time.Duration(p.config.MaxAdvertiseWaitTime) * time.Minute
-		if sleep > maxSleepTime {
-			sleep = maxSleepTime
-		}
 		select {
 		case <-p.closeC:
 			return
