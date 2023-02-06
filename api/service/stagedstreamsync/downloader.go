@@ -32,7 +32,7 @@ type (
 		downloadC chan struct{}
 		closeC    chan struct{}
 		ctx       context.Context
-		cancel    context.CancelFunc
+		cancel    func()
 
 		config Config
 		logger zerolog.Logger
@@ -70,7 +70,6 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 	//TODO: use mem db should be in config file
 	stagedSyncInstance, err := CreateStagedSync(ctx, bc, false, sp, config, logger, config.LogProgress)
 	if err != nil {
-		cancel()
 		return nil
 	}
 
