@@ -134,7 +134,7 @@ func (sh *srHelper) getBlocksByHashes(hashes []common.Hash, whitelist []sttypes.
 
 func (sh *srHelper) checkPrerequisites() error {
 	if sh.syncProtocol.NumStreams() < sh.config.Concurrency {
-		return ErrNotEnoughStreams
+		return errors.New("not enough streams")
 	}
 	return nil
 }
@@ -166,11 +166,12 @@ func (sh *srHelper) doGetBlockHashesRequest(bns []uint64) ([]common.Hash, sttype
 		return nil, stid, err
 	}
 	if len(hashes) != len(bns) {
-		sh.logger.Warn().Err(ErrUnexpectedBlockHashes).
+		err := errors.New("unexpected get block hashes result delivered")
+		sh.logger.Warn().Err(err).
 			Str("stream", string(stid)).
 			Msg(WrapStagedSyncMsg("failed to doGetBlockHashesRequest"))
 		sh.syncProtocol.StreamFailed(stid, "unexpected get block hashes result delivered")
-		return nil, stid, ErrUnexpectedBlockHashes
+		return nil, stid, err
 	}
 	return hashes, stid, nil
 }
@@ -181,9 +182,7 @@ func (sh *srHelper) doGetBlocksByNumbersRequest(bns []uint64) ([]*types.Block, s
 
 	blocks, stid, err := sh.syncProtocol.GetBlocksByNumber(ctx, bns)
 	if err != nil {
-		sh.logger.Warn().Err(err).
-			Str("stream", string(stid)).
-			Msg(WrapStagedSyncMsg("failed to doGetBlockHashesRequest"))
+		sh.logger.Warn().Err(err).Str("stream", string(stid)).Msg(WrapStagedSyncMsg("failed to doGetBlockHashesRequest"))
 		return nil, stid, err
 	}
 	return blocks, stid, nil

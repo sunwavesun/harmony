@@ -59,9 +59,7 @@ func NewDownloader(host p2p.Host, bc core.BlockChain, config Config) *Downloader
 		bh = newBeaconHelper(bc, config.BHConfig.BlockC, config.BHConfig.InsertHook)
 	}
 
-	logger := utils.Logger().With().
-		Str("module", "staged stream sync").
-		Uint32("ShardID", bc.ShardID()).Logger()
+	logger := utils.Logger().With().Str("module", "StagedStreamSync").Uint32("ShardID", bc.ShardID()).Logger()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
