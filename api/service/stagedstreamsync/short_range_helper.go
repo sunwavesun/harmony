@@ -139,11 +139,15 @@ func (sh *srHelper) checkPrerequisites() error {
 	return nil
 }
 
-func (sh *srHelper) prepareBlockHashNumbers(curNumber uint64) []uint64 {
+func (sh *srHelper) prepareBlockHashNumbers(curNumber uint64, count int) []uint64 {
 
-	res := make([]uint64, 0, BlockHashesPerRequest)
+	n := count
+	if count > BlockHashesPerRequest {
+		n = BlockHashesPerRequest
+	}
+	res := make([]uint64, 0, n)
 
-	for bn := curNumber + 1; bn <= curNumber+uint64(BlockHashesPerRequest); bn++ {
+	for bn := curNumber + 1; bn <= curNumber+uint64(n); bn++ {
 		res = append(res, bn)
 	}
 	return res
