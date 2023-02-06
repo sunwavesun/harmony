@@ -102,7 +102,6 @@ func main() {
 	verbosity := flag.Int("verbosity", 5, "Logging verbosity: 0=silent, 1=error, 2=warn, 3=info, 4=debug, 5=detail (default: 5)")
 	logConn := flag.Bool("log_conn", false, "log incoming/outgoing connections")
 	maxConnPerIP := flag.Int("max_conn_per_ip", 10, "max connections number for same ip")
-	forceReachabilityPublic := flag.Bool("force_public", false, "forcing the local node to believe it is reachable externally")
 
 	flag.Parse()
 
@@ -125,14 +124,12 @@ func main() {
 	// For bootstrap nodes, we shall keep .dht file.
 	dataStorePath := fmt.Sprintf(".dht-%s-%s", *ip, *port)
 	selfPeer := p2p.Peer{IP: *ip, Port: *port}
-
 	host, err := p2p.NewHost(p2p.HostConfig{
-		Self:                    &selfPeer,
-		BLSKey:                  privKey,
-		BootNodes:               nil, // Boot nodes have no boot nodes :) Will be connected when other nodes joined
-		DataStoreFile:           &dataStorePath,
-		MaxConnPerIP:            *maxConnPerIP,
-		ForceReachabilityPublic: *forceReachabilityPublic,
+		Self:          &selfPeer,
+		BLSKey:        privKey,
+		BootNodes:     nil, // Boot nodes have no boot nodes :) Will be connected when other nodes joined
+		DataStoreFile: &dataStorePath,
+		MaxConnPerIP:  *maxConnPerIP,
 	})
 	if err != nil {
 		utils.FatalErrMsg(err, "cannot initialize network")

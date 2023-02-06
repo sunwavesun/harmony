@@ -16,7 +16,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/routing"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	libp2p_pubsub "github.com/libp2p/go-libp2p-pubsub"
-	libp2p_config "github.com/libp2p/go-libp2p/config"
 	libp2p_crypto "github.com/libp2p/go-libp2p/core/crypto"
 	libp2p_host "github.com/libp2p/go-libp2p/core/host"
 	libp2p_network "github.com/libp2p/go-libp2p/core/network"
@@ -97,7 +96,6 @@ type HostConfig struct {
 	DisablePrivateIPScan     bool
 	MaxPeers                 int64
 	WaitForEachPeerToConnect bool
-	ForceReachabilityPublic  bool
 }
 
 func init() {
@@ -112,19 +110,6 @@ func init() {
 	libp2p_pubsub.GossipSubFanoutTTL = 10 * time.Second
 	libp2p_pubsub.GossipSubMaxPendingConnections = 32
 	libp2p_pubsub.GossipSubMaxIHaveLength = 1000
-}
-
-func forceReachabilityPublic(f bool) libp2p_config.Option {
-	if f {
-		return func(cfg *libp2p_config.Config) error {
-			public := libp2p_network.Reachability(libp2p_network.ReachabilityPublic)
-			cfg.AutoNATConfig.ForceReachability = &public
-			return nil
-		}
-	}
-	return func(p2pConfig *libp2p_config.Config) error {
-		return nil
-	}
 }
 
 // NewHost ..
@@ -143,8 +128,8 @@ func NewHost(cfg HostConfig) (Host, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	// TODO: move low and high to configs
 	connmgr, err := connmgr.NewConnManager(
-		int(cfg.MaxConnPerIP),      // LowWater
-		int(1024)*cfg.MaxConnPerIP, // HighWater,
+		int(10),                     // LowWater
+		int(10000)*cfg.MaxConnPerIP, // HighWater,
 		connmgr.WithGracePeriod(time.Minute),
 	)
 	if err != nil {
@@ -153,16 +138,16 @@ func NewHost(cfg HostConfig) (Host, error) {
 	}
 	var idht *dht.IpfsDHT
 	var opt discovery.DHTConfig
-	p2pHostConfig := []libp2p.Option{
+	p2pHost, err := libp2p.New(
 		listenAddr,
 		libp2p.Identity(key),
-		// Support TLS connections
+		// support TLS connections
 		libp2p.Security(libp2ptls.ID, libp2ptls.New),
-		// Support noise connections
+		// support noise connections
 		libp2p.Security(noise.ID, noise.New),
-		// Support any other default transports (TCP)
+		// support any other default transports (TCP)
 		libp2p.DefaultTransports,
-		// Prevent the peer from having too many
+		// Let's prevent our peer from having too many
 		// connections by attaching a connection manager.
 		libp2p.ConnectionManager(connmgr),
 		// Attempt to open ports using uPNP for NATed hosts.
@@ -180,7 +165,8 @@ func NewHost(cfg HostConfig) (Host, error) {
 			idht, err = dht.New(ctx, h, opts...)
 			return idht, err
 		}),
-		// To help other peers to figure out if they are behind
+
+		// to help other peers to figure out if they are behind
 		// NATs, launch the server-side of AutoNAT too (AutoRelay
 		// already runs the client)
 		// This service is highly rate-limited and should not cause any
@@ -188,23 +174,14 @@ func NewHost(cfg HostConfig) (Host, error) {
 		libp2p.EnableNATService(),
 		// Bandwidth Reporter
 		libp2p.BandwidthReporter(newCounter()),
-		// Enable relay service, to disable relay we can use libp2p.DisableRelay()
-		libp2p.EnableRelayService(),
-	}
-
-	if cfg.ForceReachabilityPublic {
 		// ForceReachabilityPublic overrides automatic reachability detection in the AutoNAT subsystem,
-		// forcing the local node to believe it is reachable externally
-		p2pHostConfig = append(p2pHostConfig, libp2p.ForceReachabilityPublic())
-	}
-
-	if cfg.DisablePrivateIPScan {
-		// Prevent dialing of public addresses
-		p2pHostConfig = append(p2pHostConfig, libp2p.ConnectionGater(NewGater(cfg.DisablePrivateIPScan)))
-	}
-
-	// create p2p host
-	p2pHost, err := libp2p.New(p2pHostConfig...)
+		// forcing the local node to believe it is reachable externally.
+		// libp2p.ForceReachabilityPublic(),
+		// libp2p.DisableRelay(),
+		libp2p.EnableRelayService(),
+		// prevent dialing of public addresses
+		// libp2p.ConnectionGater(NewGater(cfg.DisablePrivateIPScan)),
+	)
 	if err != nil {
 		cancel()
 		return nil, errors.Wrapf(err, "cannot initialize libp2p host")
@@ -213,7 +190,6 @@ func NewHost(cfg HostConfig) (Host, error) {
 	disc, err := discovery.NewDHTDiscovery(ctx, cancel, p2pHost, idht, opt)
 	if err != nil {
 		cancel()
-		p2pHost.Close()
 		return nil, errors.Wrap(err, "cannot create DHT discovery")
 	}
 
@@ -254,7 +230,6 @@ func NewHost(cfg HostConfig) (Host, error) {
 	pubsub, err := libp2p_pubsub.NewGossipSub(ctx, p2pHost, options...)
 	if err != nil {
 		cancel()
-		p2pHost.Close()
 		return nil, errors.Wrapf(err, "cannot initialize libp2p pub-sub")
 	}
 
