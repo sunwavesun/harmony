@@ -186,7 +186,7 @@ func (d *Downloader) waitForBootFinish() {
 func (d *Downloader) loop() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-	initSync := true
+	initSync := d.bc.ShardID() != shard.BeaconChainShardID
 	trigger := func() {
 		select {
 		case d.downloadC <- struct{}{}:
@@ -228,13 +228,11 @@ func (d *Downloader) loop() {
 				time.Sleep(1 * time.Second)
 				continue
 			}
-			if initSync {
-				d.logger.Info().Int("block added", addedBN).
-					Uint64("current height", d.bc.CurrentBlock().NumberU64()).
-					Bool("initSync", initSync).
-					Uint32("shard", d.bc.ShardID()).
-					Msg(WrapStagedSyncMsg("sync finished"))
-			}
+			d.logger.Info().Int("block added", addedBN).
+				Uint64("current height", d.bc.CurrentBlock().NumberU64()).
+				Bool("initSync", initSync).
+				Uint32("shard", d.bc.ShardID()).
+				Msg(WrapStagedSyncMsg("sync finished"))
 
 			if addedBN != 0 {
 				// If block number has been changed, trigger another sync
@@ -244,6 +242,7 @@ func (d *Downloader) loop() {
 					d.bh.insertSync()
 				}
 			}
+			d.stagedSyncInstance.initSync = false
 			initSync = false
 
 		case <-d.closeC:

@@ -118,6 +118,11 @@ func NewHost(cfg HostConfig) (Host, error) {
 		self = cfg.Self
 		key  = cfg.BLSKey
 	)
+	// listenAddr, err := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%s", self.IP, self.Port))
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err,
+	// 		"cannot create listen multiaddr from port %#v", self.Port)
+	// }
 
 	addr := fmt.Sprintf("/ip4/%s/tcp/%s", self.IP, self.Port)
 	listenAddr := libp2p.ListenAddrStrings(
@@ -126,10 +131,9 @@ func NewHost(cfg HostConfig) (Host, error) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// TODO: move low and high to configs
 	connmgr, err := connmgr.NewConnManager(
-		int(10),                     // Lowwater
-		int(10000)*cfg.MaxConnPerIP, // HighWater,
+		int(cfg.MaxPeers),                  // Lowwater
+		int(cfg.MaxPeers)*cfg.MaxConnPerIP, // HighWater,
 		connmgr.WithGracePeriod(time.Minute),
 	)
 	if err != nil {
@@ -137,6 +141,7 @@ func NewHost(cfg HostConfig) (Host, error) {
 		return nil, err
 	}
 	var idht *dht.IpfsDHT
+
 	p2pHost, err := libp2p.New(
 		listenAddr,
 		libp2p.Identity(key),
@@ -162,10 +167,7 @@ func NewHost(cfg HostConfig) (Host, error) {
 		// performance issues.
 		libp2p.EnableNATService(),
 		libp2p.BandwidthReporter(newCounter()),
-		// ForceReachabilityPublic overrides automatic reachability detection in the AutoNAT subsystem,
-		// forcing the local node to believe it is reachable externally.
-		// libp2p.ForceReachabilityPublic(),
-
+		libp2p.ForceReachabilityPublic(),
 		// prevent dialing of public addresses
 		libp2p.ConnectionGater(NewGater(cfg.DisablePrivateIPScan)),
 	)
