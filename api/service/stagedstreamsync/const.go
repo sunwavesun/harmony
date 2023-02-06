@@ -21,11 +21,11 @@ const (
 	SoftQueueCap int = 100
 
 	// DefaultConcurrency is the default settings for concurrency
-	DefaultConcurrency int = 4
+	DefaultConcurrency = 4
 
 	// ShortRangeTimeout is the timeout for each short range sync, which allow short range sync
 	// to restart automatically when stuck in `getBlockHashes`
-	ShortRangeTimeout time.Duration = 1 * time.Minute
+	ShortRangeTimeout = 1 * time.Minute
 )
 
 type (
