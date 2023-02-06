@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/harmony-one/harmony/internal/utils"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	libp2p_dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/discovery"
 	libp2p_host "github.com/libp2p/go-libp2p/core/host"
@@ -38,8 +37,19 @@ type dhtDiscovery struct {
 }
 
 // NewDHTDiscovery creates a new dhtDiscovery that implements Discovery interface.
-func NewDHTDiscovery(ctx context.Context, cancel context.CancelFunc, host libp2p_host.Host, dht *dht.IpfsDHT, opt DHTConfig) (Discovery, error) {
+func NewDHTDiscovery(host libp2p_host.Host, opt DHTConfig) (Discovery, error) {
+	opts, err := opt.getLibp2pRawOptions()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	dht, err := libp2p_dht.New(ctx, host, opts...)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	d := libp2p_dis.NewRoutingDiscovery(dht)
+
 	logger := utils.Logger().With().Str("module", "discovery").Logger()
 	return &dhtDiscovery{
 		dht:    dht,
