@@ -134,7 +134,6 @@ func initDB(ctx context.Context, mainDB kv.RwDB, dbs []kv.RwDB, concurrency int)
 	return nil
 }
 
-// GetBlockDbPath returns the path of the cache database which stores blocks
 func GetBlockDbPath(beacon bool, loopID int) string {
 	if beacon {
 		if loopID >= 0 {
