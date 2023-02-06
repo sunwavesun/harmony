@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/harmony-one/harmony/consensus/engine"
+	"github.com/harmony-one/harmony/core"
 	nodeconfig "github.com/harmony-one/harmony/internal/configs/node"
 	shardingconfig "github.com/harmony-one/harmony/internal/configs/sharding"
 	"github.com/harmony-one/harmony/internal/utils"
@@ -16,6 +17,7 @@ import (
 	"github.com/harmony-one/harmony/p2p/stream/common/requestmanager"
 	"github.com/harmony-one/harmony/p2p/stream/common/streammanager"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
+	"github.com/harmony-one/harmony/shard"
 	"github.com/hashicorp/go-version"
 	libp2p_host "github.com/libp2p/go-libp2p/core/host"
 	libp2p_network "github.com/libp2p/go-libp2p/core/network"
@@ -58,12 +60,12 @@ type (
 
 	// Config is the sync protocol config
 	Config struct {
-		Chain      engine.ChainReader
-		Host       libp2p_host.Host
-		Discovery  discovery.Discovery
-		ShardID    nodeconfig.ShardID
-		Network    nodeconfig.NetworkType
-		BeaconNode bool
+		Chain     engine.ChainReader
+		Host      libp2p_host.Host
+		Discovery discovery.Discovery
+		ShardID   nodeconfig.ShardID
+		Network   nodeconfig.NetworkType
+
 		// stream manager config
 		SmSoftLowCap int
 		SmHardLowCap int
@@ -76,9 +78,13 @@ type (
 func NewProtocol(config Config) *Protocol {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	isBeaconNode := config.Chain.ShardID() == shard.BeaconChainShardID
+	if _, ok := config.Chain.(*core.EpochChain); ok {
+		isBeaconNode = false
+	}
 	sp := &Protocol{
 		chain:      config.Chain,
-		beaconNode: config.BeaconNode,
+		beaconNode: isBeaconNode,
 		disc:       config.Discovery,
 		config:     config,
 		ctx:        ctx,
