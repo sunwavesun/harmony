@@ -17,9 +17,6 @@ const (
 	// See comments for GetBlocksByNumAmountCap.
 	GetBlocksByHashesAmountCap = 10
 
-	// MaxStreamFailures is the maximum allowed failures before stream gets removed
-	MaxStreamFailures = 3
-
 	// minAdvertiseInterval is the minimum advertise interval
 	minAdvertiseInterval = 1 * time.Minute
 

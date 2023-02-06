@@ -21,9 +21,6 @@ type Stream interface {
 	ReadBytes() ([]byte, error)
 	Close() error
 	CloseOnExit() error
-	FailedTimes() int
-	AddFailedTimes()
-	ResetFailedRimes()
 }
 
 // BaseStream is the wrapper around
@@ -37,17 +34,14 @@ type BaseStream struct {
 	spec     ProtoSpec
 	specErr  error
 	specOnce sync.Once
-
-	failedTimes int
 }
 
 // NewBaseStream creates BaseStream as the wrapper of libp2p Stream
 func NewBaseStream(st libp2p_network.Stream) *BaseStream {
 	reader := bufio.NewReader(st)
 	return &BaseStream{
-		raw:         st,
-		reader:      reader,
-		failedTimes: 0,
+		raw:    st,
+		reader: reader,
 	}
 }
 
@@ -76,18 +70,6 @@ func (st *BaseStream) ProtoSpec() (ProtoSpec, error) {
 // Close reset the stream, and close the connection for both sides.
 func (st *BaseStream) Close() error {
 	return st.raw.Reset()
-}
-
-func (st *BaseStream) FailedTimes() int {
-	return st.failedTimes
-}
-
-func (st *BaseStream) AddFailedTimes() {
-	st.failedTimes++
-}
-
-func (st *BaseStream) ResetFailedRimes() {
-	st.failedTimes = 0
 }
 
 const (

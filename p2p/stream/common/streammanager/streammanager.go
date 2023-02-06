@@ -10,7 +10,6 @@ import (
 	"github.com/harmony-one/abool"
 	"github.com/harmony-one/harmony/internal/utils"
 	sttypes "github.com/harmony-one/harmony/p2p/stream/types"
-	"github.com/harmony-one/harmony/shard"
 	"github.com/libp2p/go-libp2p/core/network"
 	libp2p_peer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -73,9 +72,6 @@ func newStreamManager(pid sttypes.ProtoID, host host, pf peerFinder, handleStrea
 		Str("protocol ID", string(pid)).Logger()
 
 	protoSpec, _ := sttypes.ProtoIDToProtoSpec(pid)
-
-	fmt.Println("my peer id: ", host.ID().String())
-	fmt.Println("my proto id: ", pid)
 
 	return &streamManager{
 		myProtoID:     pid,
@@ -238,9 +234,6 @@ func (sm *streamManager) sanityCheckStream(st sttypes.Stream) error {
 	if mySpec.ShardID != rmSpec.ShardID {
 		return fmt.Errorf("unexpected shard ID: %v/%v", rmSpec.ShardID, mySpec.ShardID)
 	}
-	if mySpec.ShardID == shard.BeaconChainShardID && !rmSpec.BeaconNode {
-		return fmt.Errorf("unexpected beacon node with shard ID: %v/%v", rmSpec.ShardID, mySpec.ShardID)
-	}
 	return nil
 }
 
@@ -330,7 +323,7 @@ func (sm *streamManager) discoverAndSetupStream(discCtx context.Context) (int, e
 }
 
 func (sm *streamManager) discover(ctx context.Context) (<-chan libp2p_peer.AddrInfo, error) {
-	protoID := sm.targetProtoID()
+	protoID := string(sm.myProtoID)
 	discBatch := sm.config.DiscBatch
 	if sm.config.HiCap-sm.streams.size() < sm.config.DiscBatch {
 		discBatch = sm.config.HiCap - sm.streams.size()
@@ -347,14 +340,6 @@ func (sm *streamManager) discover(ctx context.Context) (<-chan libp2p_peer.AddrI
 	return sm.pf.FindPeers(ctx2, protoID, discBatch)
 }
 
-func (sm *streamManager) targetProtoID() string {
-	targetSpec := sm.myProtoSpec
-	if targetSpec.ShardID == shard.BeaconChainShardID { // for beacon chain, only connect to beacon nodes
-		targetSpec.BeaconNode = true
-	}
-	return string(targetSpec.ToProtoID())
-}
-
 func (sm *streamManager) setupStreamWithPeer(ctx context.Context, pid libp2p_peer.ID) error {
 	timer := prometheus.NewTimer(setupStreamDuration.With(prometheus.Labels{"topic": string(sm.myProtoID)}))
 	defer timer.ObserveDuration()
@@ -362,7 +347,7 @@ func (sm *streamManager) setupStreamWithPeer(ctx context.Context, pid libp2p_pee
 	nCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 
-	st, err := sm.host.NewStream(nCtx, pid, protocol.ID(sm.targetProtoID()))
+	st, err := sm.host.NewStream(nCtx, pid, protocol.ID(sm.myProtoID))
 	if err != nil {
 		return err
 	}
@@ -407,10 +392,6 @@ func (ss *streamSet) get(id sttypes.StreamID) (sttypes.Stream, bool) {
 	ss.lock.RLock()
 	defer ss.lock.RUnlock()
 
-	if id == "" {
-		return nil, false
-	}
-	
 	st, ok := ss.streams[id]
 	return st, ok
 }
