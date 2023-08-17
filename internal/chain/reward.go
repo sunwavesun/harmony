@@ -278,7 +278,7 @@ func AccumulateRewardsAndCountSigs(
 		return network.EmptyPayout, err
 	}
 
-	// Only do reward distribution at the 63th block in the modulus.
+	// Only do reward distribution at the 63rd block in the modulus.
 	if blockNum%RewardFrequency != RewardFrequency-1 {
 		return network.EmptyPayout, nil
 	}

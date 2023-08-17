@@ -311,7 +311,7 @@ func (e *engineImpl) Finalize(
 
 	// Accumulate block rewards and commit the final state root
 	// Header seems complete, assemble into a block and return
-	payout, err := AccumulateRewardsAndCountSigs(
+	remainder, payout, err := AccumulateRewardsAndCountSigs(
 		chain, state, header, beacon, sigsReady,
 	)
 	if err != nil {
@@ -330,6 +330,10 @@ func (e *engineImpl) Finalize(
 	// ViewID setting needs to happen after commig sig reward logic for pipelining reason.
 	// TODO: make the viewID fetch from caller of the block proposal.
 	header.SetViewID(new(big.Int).SetUint64(viewID()))
+
+	if chain.Config().IsHIP30(header.Epoch()) {
+
+	}
 
 	// Finalize the state root
 	header.SetRoot(state.IntermediateRoot(chain.Config().IsS3(header.Epoch())))
