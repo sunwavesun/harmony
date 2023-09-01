@@ -741,7 +741,7 @@ func (node *Node) StartPubSub() error {
 		actionType     proto_node.MessageType
 	}
 
-	isThisNodeAnExplorerNode := node.NodeConfig.Role() == nodeconfig.ExplorerNode
+	isExplorerNode := node.NodeConfig.Role() == nodeconfig.ExplorerNode
 	nodeStringCounterVec.WithLabelValues("peerid", nodeconfig.GetPeerID().String()).Inc()
 
 	for i := range allTopics {
@@ -877,7 +877,7 @@ func (node *Node) StartPubSub() error {
 						if semConsensus.TryAcquire(1) {
 							defer semConsensus.Release(1)
 
-							if isThisNodeAnExplorerNode {
+							if isExplorerNode {
 								if err := node.explorerMessageHandler(
 									ctx, msg.handleCArg,
 								); err != nil {
