@@ -297,6 +297,28 @@ func (h *Header) SetLastCommitBitmap(newLastCommitBitmap []byte) {
 	h.fields.LastCommitBitmap = append(newLastCommitBitmap[:0:0], newLastCommitBitmap...)
 }
 
+func (h *Header) PrevCommitSignature() [96]byte {
+	h.Logger(utils.Logger()).Error().
+		Msg("PrevCommitSignature not supported in V0 header")
+	return [96]byte{}
+}
+
+func (h *Header) SetPrevCommitSignature(newPrevCommitSignature [96]byte) {
+	h.Logger(utils.Logger()).Error().
+		Msg("SetPrevCommitSignature not supported in V0 header")
+}
+
+func (h *Header) PrevCommitBitmap() []byte {
+	h.Logger(utils.Logger()).Error().
+		Msg("PrevCommitBitmap not supported in V0 header")
+	return []byte{}
+}
+
+func (h *Header) SetPrevCommitBitmap(newPrevCommitBitmap []byte) {
+	h.Logger(utils.Logger()).Error().
+		Msg("SetPrevCommitBitmap not supported in V0 header")
+}
+
 // ShardStateHash is the shard state hash.
 func (h *Header) ShardStateHash() common.Hash {
 	return h.fields.ShardStateHash

@@ -1,4 +1,4 @@
-package v2
+package v3
 
 import (
 	"io"
@@ -6,17 +6,17 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/rs/zerolog"
+
 	blockif "github.com/harmony-one/harmony/block/interface"
 	"github.com/harmony-one/harmony/crypto/hash"
 	"github.com/harmony-one/harmony/internal/utils"
 	"github.com/harmony-one/harmony/shard"
-	"github.com/rs/zerolog"
 )
 
-// Header is the V2 block header.
+// Header is the V4 block header.
 type Header struct {
 	fields headerFields
 }
@@ -57,16 +57,18 @@ type headerFields struct {
 	Extra               []byte         `json:"extraData"        gencodec:"required"`
 	MixDigest           common.Hash    `json:"mixHash"          gencodec:"required"`
 	// Additional Fields
-	ViewID              *big.Int    `json:"viewID"           gencodec:"required"`
-	Epoch               *big.Int    `json:"epoch"            gencodec:"required"`
-	ShardID             uint32      `json:"shardID"          gencodec:"required"`
-	LastCommitSignature [96]byte    `json:"lastCommitSignature"  gencodec:"required"`
-	LastCommitBitmap    []byte      `json:"lastCommitBitmap"     gencodec:"required"` // Contains which validator signed
-	ShardStateHash      common.Hash `json:"shardStateRoot"`
-	Vrf                 []byte      `json:"vrf"`
-	Vdf                 []byte      `json:"vdf"`
-	ShardState          []byte      `json:"shardState"`
-	CrossLinks          []byte      `json:"crossLink"`
+	ViewID              *big.Int `json:"viewID"           gencodec:"required"`
+	Epoch               *big.Int `json:"epoch"            gencodec:"required"`
+	ShardID             uint32   `json:"shardID"          gencodec:"required"`
+	LastCommitSignature [96]byte `json:"lastCommitSignature"  gencodec:"required"`
+	LastCommitBitmap    []byte   `json:"lastCommitBitmap"     gencodec:"required"` // Contains which validator signed
+	PrevCommitSignature [96]byte `json:"prevCommitSignature"  gencodec:"required"`
+	PrevCommitBitmap    []byte   `json:"prevCommitBitmap"     gencodec:"required"` // Contains which validator signed
+	Vrf                 []byte   `json:"vrf"`
+	Vdf                 []byte   `json:"vdf"`
+	ShardState          []byte   `json:"shardState"`
+	CrossLinks          []byte   `json:"crossLink"`
+	Slashes             []byte   `json:"slashes"`
 }
 
 // ParentHash is the header hash of the parent block.  For the genesis block
@@ -80,8 +82,8 @@ func (h *Header) SetParentHash(newParentHash common.Hash) {
 	h.fields.ParentHash = newParentHash
 }
 
-// Coinbase is the address of the node that proposed this block and all
-// transactions in it.
+// Coinbase is now the first 20 bytes of the SHA256 hash of the leader's
+// public BLS key. This is required for EVM compatibility.
 func (h *Header) Coinbase() common.Address {
 	return h.fields.Coinbase
 }
@@ -294,36 +296,40 @@ func (h *Header) SetLastCommitBitmap(newLastCommitBitmap []byte) {
 	h.fields.LastCommitBitmap = append(newLastCommitBitmap[:0:0], newLastCommitBitmap...)
 }
 
+// PrevCommitSignature is the FBFT commit group signature for the second-to-last block.
 func (h *Header) PrevCommitSignature() [96]byte {
-	h.Logger(utils.Logger()).Error().
-		Msg("PrevCommitSignature not supported in V2 header")
-	return [96]byte{}
+	return h.fields.PrevCommitSignature
 }
 
+// SetPrevCommitSignature sets the FBFT commit group signature for the second-to-last
+// block.
 func (h *Header) SetPrevCommitSignature(newPrevCommitSignature [96]byte) {
-	h.Logger(utils.Logger()).Error().
-		Msg("SetPrevCommitSignature not supported in V2 header")
+	h.fields.PrevCommitSignature = newPrevCommitSignature
 }
 
+// PrevCommitBitmap is the signatory bitmap of the second-to-last block.  Bit
+// positions	index into committee member array.
+//
+// The returned slice is a copy; the caller may do anything with it.
 func (h *Header) PrevCommitBitmap() []byte {
-	h.Logger(utils.Logger()).Error().
-		Msg("PrevCommitBitmap not supported in V2 header")
-	return []byte{}
+	return append(h.fields.PrevCommitBitmap[:0:0], h.fields.PrevCommitBitmap...)
 }
 
+// SetPrevCommitBitmap sets the signatory bitmap of the second-to-last block.
 func (h *Header) SetPrevCommitBitmap(newPrevCommitBitmap []byte) {
-	h.Logger(utils.Logger()).Error().
-		Msg("SetPrevCommitBitmap not supported in V2 header")
+	h.fields.PrevCommitBitmap = append(newPrevCommitBitmap[:0:0], newPrevCommitBitmap...)
 }
 
 // ShardStateHash is the shard state hash.
 func (h *Header) ShardStateHash() common.Hash {
-	return h.fields.ShardStateHash
+	return common.Hash{}
 }
 
 // SetShardStateHash sets the shard state hash.
 func (h *Header) SetShardStateHash(newShardStateHash common.Hash) {
-	h.fields.ShardStateHash = newShardStateHash
+	h.Logger(utils.Logger()).Warn().
+		Str("shardStateHash", newShardStateHash.Hex()).
+		Msg("cannot store ShardStateHash in V3 header")
 }
 
 // Vrf is the output of the VRF for the epoch.
@@ -388,27 +394,12 @@ func (h *Header) SetCrossLinks(newCrossLinks []byte) {
 
 // Slashes ..
 func (h *Header) Slashes() []byte {
-	h.Logger(utils.Logger()).Info().
-		Msg("No slashes in V2 header")
-	return nil
+	return append(h.fields.Slashes[:0:0], h.fields.Slashes...)
 }
 
 // SetSlashes ..
 func (h *Header) SetSlashes(newSlashes []byte) {
-	h.Logger(utils.Logger()).Error().
-		Hex("slashes", newSlashes).
-		Msg("cannot store slashes in V2 header")
-}
-
-// field type overrides for gencodec
-type headerMarshaling struct {
-	Difficulty *hexutil.Big
-	Number     *hexutil.Big
-	GasLimit   hexutil.Uint64
-	GasUsed    hexutil.Uint64
-	Time       *hexutil.Big
-	Extra      hexutil.Bytes
-	Hash       common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
+	h.fields.Slashes = append(newSlashes[:0:0], newSlashes...)
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
@@ -421,7 +412,10 @@ func (h *Header) Hash() common.Hash {
 // to approximate and limit the memory consumption of various caches.
 func (h *Header) Size() common.StorageSize {
 	// TODO: update with new fields
-	return common.StorageSize(unsafe.Sizeof(*h)) + common.StorageSize(len(h.Extra())+(h.Number().BitLen()+h.Time().BitLen())/8)
+	return common.StorageSize(unsafe.Sizeof(*h)) +
+		common.StorageSize(len(h.Extra())+(h.Number().BitLen()+
+			h.Time().BitLen())/8,
+		)
 }
 
 // Logger returns a sub-logger with block contexts added.

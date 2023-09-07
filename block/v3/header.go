@@ -283,6 +283,28 @@ func (h *Header) SetLastCommitSignature(newLastCommitSignature [96]byte) {
 	h.fields.LastCommitSignature = newLastCommitSignature
 }
 
+func (h *Header) PrevCommitSignature() [96]byte {
+	h.Logger(utils.Logger()).Error().
+		Msg("PrevCommitSignature not supported in V3 header")
+	return [96]byte{}
+}
+
+func (h *Header) SetPrevCommitSignature(newPrevCommitSignature [96]byte) {
+	h.Logger(utils.Logger()).Error().
+		Msg("SetPrevCommitSignature not supported in V3 header")
+}
+
+func (h *Header) PrevCommitBitmap() []byte {
+	h.Logger(utils.Logger()).Error().
+		Msg("PrevCommitBitmap not supported in V3 header")
+	return []byte{}
+}
+
+func (h *Header) SetPrevCommitBitmap(newPrevCommitBitmap []byte) {
+	h.Logger(utils.Logger()).Error().
+		Msg("SetPrevCommitBitmap not supported in V3 header")
+}
+
 // LastCommitBitmap is the signatory bitmap of the previous block.  Bit
 // positions index into committee member array.
 //
