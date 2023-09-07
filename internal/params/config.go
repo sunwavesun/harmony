@@ -74,6 +74,7 @@ var (
 		FeeCollectEpoch:                        big.NewInt(1535), // 2023-07-20 05:51:07+00:00
 		ValidatorCodeFixEpoch:                  big.NewInt(1535), // 2023-07-20 05:51:07+00:00
 		HIP30Epoch:                             EpochTBD,
+		FastCommitEpoch:                        EpochTBD,
 	}
 
 	// TestnetChainConfig contains the chain parameters to run a node on the harmony test network.
@@ -116,6 +117,7 @@ var (
 		FeeCollectEpoch:                        big.NewInt(1296), // 2023-04-28 07:14:20+00:00
 		ValidatorCodeFixEpoch:                  big.NewInt(1296), // 2023-04-28 07:14:20+00:00
 		HIP30Epoch:                             EpochTBD,
+		FastCommitEpoch:                        EpochTBD,
 	}
 	// PangaeaChainConfig contains the chain parameters for the Pangaea network.
 	// All features except for CrossLink are enabled at launch.
@@ -158,6 +160,7 @@ var (
 		FeeCollectEpoch:                        EpochTBD,
 		ValidatorCodeFixEpoch:                  EpochTBD,
 		HIP30Epoch:                             EpochTBD,
+		FastCommitEpoch:                        EpochTBD,
 	}
 
 	// PartnerChainConfig contains the chain parameters for the Partner network.
@@ -201,6 +204,7 @@ var (
 		FeeCollectEpoch:                        big.NewInt(848), // 2023-04-28 04:33:33+00:00
 		ValidatorCodeFixEpoch:                  big.NewInt(848),
 		HIP30Epoch:                             EpochTBD,
+		FastCommitEpoch:                        EpochTBD,
 	}
 
 	// StressnetChainConfig contains the chain parameters for the Stress test network.
@@ -244,6 +248,7 @@ var (
 		LeaderRotationExternalBeaconLeaders:    EpochTBD,
 		ValidatorCodeFixEpoch:                  EpochTBD,
 		HIP30Epoch:                             EpochTBD,
+		FastCommitEpoch:                        EpochTBD,
 	}
 
 	// LocalnetChainConfig contains the chain parameters to run for local development.
@@ -286,6 +291,7 @@ var (
 		FeeCollectEpoch:                        big.NewInt(2),
 		ValidatorCodeFixEpoch:                  big.NewInt(2),
 		HIP30Epoch:                             EpochTBD,
+		FastCommitEpoch:                        big.NewInt(0),
 	}
 
 	// AllProtocolChanges ...
@@ -330,6 +336,7 @@ var (
 		big.NewInt(0),                      // FeeCollectEpoch
 		big.NewInt(0),                      // ValidatorCodeFixEpoch
 		big.NewInt(0),                      // HIP30Epoch
+		big.NewInt(0),                      // FastCommitEpoch
 	}
 
 	// TestChainConfig ...
@@ -374,6 +381,7 @@ var (
 		big.NewInt(0),        // FeeCollectEpoch
 		big.NewInt(0),        // ValidatorCodeFixEpoch
 		big.NewInt(0),        // HIP30Epoch
+		big.NewInt(0),        // FastCommitEpoch
 	}
 
 	// TestRules ...
@@ -537,6 +545,12 @@ type ChainConfig struct {
 	// 3. Change from 250 to 200 nodes for remaining shards (mainnet and localnet)
 	// 4. Change the minimum validator commission from 5 to 7% (all nets)
 	HIP30Epoch *big.Int `json:"hip30-epoch,omitempty"`
+
+	// FastCommitEpoch is the first epoch that enables fast commit.
+	// It allows the leader to commit and broadcast as soon as 2/3 of signature has been collected.
+	// As the leader produces the next block, the signatures and bitmaps for the previous block will
+	// be included as part of the new block, allowing for faster block production and data inclusion.
+	FastCommitEpoch *big.Int `json:"fast-commit-epoch,omitempty"`
 }
 
 // String implements the fmt.Stringer interface.
@@ -793,6 +807,10 @@ func (c *ChainConfig) IsValidatorCodeFix(epoch *big.Int) bool {
 
 func (c *ChainConfig) IsHIP30(epoch *big.Int) bool {
 	return isForked(c.HIP30Epoch, epoch)
+}
+
+func (c *ChainConfig) IsFastCommit(epoch *big.Int) bool {
+	return isForked(c.FastCommitEpoch, epoch)
 }
 
 // During this epoch, shards 2 and 3 will start sending
