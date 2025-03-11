@@ -17,6 +17,7 @@
 package types
 
 import (
+	"bytes"
 	"container/heap"
 	"errors"
 	"fmt"
@@ -29,10 +30,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/harmony-one/harmony/crypto/hash"
 	common2 "github.com/harmony-one/harmony/internal/common"
 	staking "github.com/harmony-one/harmony/staking/types"
 )
@@ -41,7 +40,10 @@ import (
 
 // Errors constants for Transaction.
 var (
-	ErrInvalidSig = errors.New("invalid transaction v, r, s values")
+	ErrInvalidSig         = errors.New("invalid transaction v, r, s values")
+	ErrInvalidTxType      = errors.New("transaction type not supported")
+	ErrTxTypeNotSupported = errors.New("transaction type not supported")
+	errShortTypedTx       = errors.New("typed transaction too short")
 )
 
 // TransactionType different types of transactions
@@ -57,6 +59,13 @@ const (
 	Delegate
 	Undelegate
 	CollectRewards
+)
+
+// Transaction types for EIP-2718
+const (
+	LegacyTxType = 0x00
+	// // todo(sun): implement access list
+	// AccessListTxType = 0x01
 )
 
 // StakingTypeMap is the map from staking type to transactionType
@@ -96,7 +105,7 @@ type CoreTransaction interface {
 
 // Transaction struct.
 type Transaction struct {
-	data txdata
+	data TxData
 	// caches
 	hash atomic.Value
 	size atomic.Value
@@ -104,6 +113,40 @@ type Transaction struct {
 	// time at which the node received the tx
 	// and not the time set by the sender
 	time time.Time
+}
+
+type TxData interface {
+	txType() byte // returns the type ID
+	copy() TxData // creates a deep copy
+
+	// // todo(sun): is shard information even required?
+	// shardID() uint32
+	// toShardID() uint32
+
+	chainID() *big.Int
+	// accessList() AccessList
+	data() []byte
+	gas() uint64
+	gasPrice() *big.Int
+	// gasTipCap() *big.Int // todo(sun): what is this?
+	gasFeeCap() *big.Int
+	value() *big.Int
+	nonce() uint64
+	to() *common.Address
+
+	rawSignatureValues() (v, r, s *big.Int)
+	setSignatureValues(chainID, v, r, s *big.Int)
+
+	// effectiveGasPrice computes the gas price paid by the transaction, given
+	// the inclusion block baseFee.
+	//
+	// Unlike other TxData methods, the returned *big.Int should be an independent
+	// copy of the computed value, i.e. callers are allowed to mutate the result.
+	// Method implementations can use 'dst' to store the result.
+	effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int
+
+	encode(*bytes.Buffer) error
+	decode([]byte) error
 }
 
 // String print mode string
@@ -128,24 +171,24 @@ func (txType TransactionType) String() string {
 	return "Unknown"
 }
 
-type txdata struct {
-	AccountNonce uint64          `json:"nonce"      gencodec:"required"`
-	Price        *big.Int        `json:"gasPrice"   gencodec:"required"`
-	GasLimit     uint64          `json:"gas"        gencodec:"required"`
-	ShardID      uint32          `json:"shardID"    gencodec:"required"`
-	ToShardID    uint32          `json:"toShardID"  gencodec:"required"`
-	Recipient    *common.Address `json:"to"         rlp:"nil"` // nil means contract creation
-	Amount       *big.Int        `json:"value"      gencodec:"required"`
-	Payload      []byte          `json:"input"      gencodec:"required"`
+// type txdata struct {
+// 	AccountNonce uint64          `json:"nonce"      gencodec:"required"`
+// 	Price        *big.Int        `json:"gasPrice"   gencodec:"required"`
+// 	GasLimit     uint64          `json:"gas"        gencodec:"required"`
+// 	ShardID      uint32          `json:"shardID"    gencodec:"required"`
+// 	ToShardID    uint32          `json:"toShardID"  gencodec:"required"`
+// 	Recipient    *common.Address `json:"to"         rlp:"nil"` // nil means contract creation
+// 	Amount       *big.Int        `json:"value"      gencodec:"required"`
+// 	Payload      []byte          `json:"input"      gencodec:"required"`
 
-	// Signature values
-	V *big.Int `json:"v" gencodec:"required"`
-	R *big.Int `json:"r" gencodec:"required"`
-	S *big.Int `json:"s" gencodec:"required"`
+// 	// Signature values
+// 	V *big.Int `json:"v" gencodec:"required"`
+// 	R *big.Int `json:"r" gencodec:"required"`
+// 	S *big.Int `json:"s" gencodec:"required"`
 
-	// This is only used when marshaling to JSON.
-	Hash *common.Hash `json:"hash" rlp:"-"`
-}
+// 	// This is only used when marshaling to JSON.
+// 	Hash *common.Hash `json:"hash" rlp:"-"`
+// }
 
 func copyAddr(addr *common.Address) *common.Address {
 	if addr == nil {
@@ -163,25 +206,7 @@ func copyHash(hash *common.Hash) *common.Hash {
 	return &copy
 }
 
-func (d *txdata) CopyFrom(d2 *txdata) {
-	d.AccountNonce = d2.AccountNonce
-	d.Price = new(big.Int).Set(d2.Price)
-	d.GasLimit = d2.GasLimit
-	d.ShardID = d2.ShardID
-	d.ToShardID = d2.ToShardID
-	d.Recipient = copyAddr(d2.Recipient)
-	d.Amount = new(big.Int).Set(d2.Amount)
-	d.Payload = append(d2.Payload[:0:0], d2.Payload...)
-	d.V = new(big.Int).Set(d2.V)
-	d.R = new(big.Int).Set(d2.R)
-	d.S = new(big.Int).Set(d2.S)
-	d.Hash = copyHash(d2.Hash)
-}
-
-func (d *txdata) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
-	return dst.Set(d.Price)
-}
-
+// todo(sun): how does this work?
 type txdataMarshaling struct {
 	AccountNonce hexutil.Uint64
 	Price        *hexutil.Big
@@ -191,6 +216,13 @@ type txdataMarshaling struct {
 	V            *hexutil.Big
 	R            *hexutil.Big
 	S            *hexutil.Big
+}
+
+// NewTx creates a new transaction
+func NewTx(data TxData) *Transaction {
+	tx := new(Transaction)
+	tx.setDecoded(data.copy(), 0)
+	return tx
 }
 
 // NewTransaction returns new transaction, this method is to create same shard transaction
@@ -267,54 +299,58 @@ func (tx *Transaction) From() *atomic.Value {
 	return &tx.from
 }
 
-// V value of the transaction signature
-func (tx *Transaction) V() *big.Int {
-	return tx.data.V
-}
-
-// R value of the transaction signature
-func (tx *Transaction) R() *big.Int {
-	return tx.data.R
-}
-
-// S value of the transaction signature
-func (tx *Transaction) S() *big.Int {
-	return tx.data.S
+func (tx *Transaction) RawSignatureValues() (v, r, s *big.Int) {
+	return tx.data.rawSignatureValues()
 }
 
 // Value is the amount of ONE token transfered (in Atto)
 func (tx *Transaction) Value() *big.Int {
-	return tx.data.Amount
+	return new(big.Int).Set(tx.data.value())
 }
 
 // GasLimit of the transcation
 func (tx *Transaction) GasLimit() uint64 {
-	return tx.data.GasLimit
+	return tx.data.gas()
 }
 
 // GasPrice is the gas price of the transaction
 func (tx *Transaction) GasPrice() *big.Int {
-	return tx.data.Price
+	return new(big.Int).Set(tx.data.gasPrice())
 }
+
+func (tx *Transaction) EffectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	// return dst.Set(d.Price)
+	return tx.data.effectiveGasPrice(dst, baseFee)
+}
+
+// // GasTipCap is the gasTipCap per gas of the transaction
+// // Implemented in EIP-1559
+// func (tx *Transaction) GasTipCap() *big.Int {
+// 	return new(big.Int).Set(tx.data.gasTipCap())
+// }
 
 // Data returns data payload of Transaction.
 func (tx *Transaction) Data() []byte {
-	return common.CopyBytes(tx.data.Payload)
+	return common.CopyBytes(tx.data.data())
 }
 
-// ChainID returns which chain id this transaction was signed for (if at all)
+// ChainId returns the EIP155 chain ID of the transaction. The return value will always be
+// non-nil. For legacy transactions which are not replay-protected, the return value is
+// zero.
 func (tx *Transaction) ChainID() *big.Int {
-	return deriveChainID(tx.data.V)
+	return tx.data.chainID()
 }
 
+// todo(sun): shard id
 // ShardID returns which shard id this transaction was signed for (if at all)
 func (tx *Transaction) ShardID() uint32 {
-	return tx.data.ShardID
+	return tx.data.shardID()
 }
 
+// todo(sun): shard id
 // ToShardID returns the destination shard id this transaction is going to
 func (tx *Transaction) ToShardID() uint32 {
-	return tx.data.ToShardID
+	return tx.data.toShardID()
 }
 
 // Time returns the time at which the transaction was received by the node
@@ -322,9 +358,19 @@ func (tx *Transaction) Time() time.Time {
 	return tx.time
 }
 
+// Type returns the transaction type
+func (tx *Transaction) Type() uint8 {
+	return tx.data.txType()
+}
+
 // Protected returns whether the transaction is protected from replay protection.
 func (tx *Transaction) Protected() bool {
-	return isProtectedV(tx.data.V)
+	switch tx := tx.data.(type) {
+	case *LegacyTx:
+		return tx.V != nil && isProtectedV(tx.V)
+	default:
+		return true
+	}
 }
 
 func isProtectedV(V *big.Int) bool {
@@ -338,57 +384,114 @@ func isProtectedV(V *big.Int) bool {
 
 // EncodeRLP implements rlp.Encoder
 func (tx *Transaction) EncodeRLP(w io.Writer) error {
-	return rlp.Encode(w, &tx.data)
+	if tx.Type() == LegacyTxType {
+		return rlp.Encode(w, tx.data)
+	}
+
+	// EIP-2718 typed tx envelope
+	var buf bytes.Buffer
+	if err := tx.encodeTyped(&buf); err != nil {
+		return err
+	}
+
+	return rlp.Encode(w, buf.Bytes())
+}
+
+// encodeTyped writes the canonical encoding of a typed transaction to w
+func (tx *Transaction) encodeTyped(w *bytes.Buffer) error {
+	w.WriteByte(tx.Type())
+	return rlp.Encode(w, tx.data)
 }
 
 // DecodeRLP implements rlp.Decoder
 func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
-	_, size, _ := s.Kind()
-	err := s.Decode(&tx.data)
-	if err == nil {
-		tx.size.Store(common.StorageSize(rlp.ListSize(size)))
-		tx.time = time.Now()
-	}
-
-	return err
-}
-
-// MarshalJSON encodes the web3 RPC transaction format.
-func (tx *Transaction) MarshalJSON() ([]byte, error) {
-	hash := tx.Hash()
-	data := tx.data
-	data.Hash = &hash
-	return data.MarshalJSON()
-}
-
-// UnmarshalJSON decodes the web3 RPC transaction format.
-func (tx *Transaction) UnmarshalJSON(input []byte) error {
-	var dec txdata
-	if err := dec.UnmarshalJSON(input); err != nil {
+	kind, size, err := s.Kind()
+	switch {
+	case err != nil:
 		return err
-	}
-
-	withSignature := dec.V.Sign() != 0 || dec.R.Sign() != 0 || dec.S.Sign() != 0
-	if withSignature {
-		var V byte
-		if isProtectedV(dec.V) {
-			chainID := deriveChainID(dec.V).Uint64()
-			V = byte(dec.V.Uint64() - 35 - 2*chainID)
-		} else {
-			V = byte(dec.V.Uint64() - 27)
+	case kind == rlp.List:
+		// legacy transaction
+		var data LegacyTx
+		err := s.Decode(&data)
+		if err == nil {
+			tx.setDecoded(&data, int(rlp.ListSize(size)))
 		}
-		if !crypto.ValidateSignatureValues(V, dec.R, dec.S, false) {
-			return ErrInvalidSig
+		return err
+	case kind == rlp.String:
+		// EIP-2718 typed tx envelope
+		var b []byte
+		if b, err = s.Bytes(); err != nil {
+			return err
 		}
+		data, err := tx.decodeTyped(b)
+		if err != nil {
+			tx.setDecoded(data, len(b))
+		}
+		return err
+	default:
+		return rlp.ErrExpectedList
 	}
-
-	*tx = Transaction{data: dec}
-	return nil
 }
+
+// decodeTyped decodes a typed transaction from the canonical format
+func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
+	if len(b) <= 1 {
+		return nil, errShortTypedTx
+	}
+	switch b[0] {
+	default:
+		// todo(sun): implement transaction types
+		return nil, ErrTxTypeNotSupported
+	}
+}
+
+// setDecoded sets the inner transaction and size after decoding
+func (tx *Transaction) setDecoded(data TxData, size int) {
+	tx.data = data
+	tx.time = time.Now()
+	if size > 0 {
+		tx.size.Store(common.StorageSize(size))
+	}
+}
+
+// // todo(sun): move it to transaction_marshalling.go
+// // MarshalJSON encodes the web3 RPC transaction format.
+// func (tx *Transaction) MarshalJSON() ([]byte, error) {
+// 	hash := tx.Hash()
+// 	data := tx.data
+// 	data.Hash = &hash
+// 	return data.MarshalJSON()
+// }
+
+// // todo(sun): move it to transaction_marshalling.go
+// // UnmarshalJSON decodes the web3 RPC transaction format.
+// func (tx *Transaction) UnmarshalJSON(input []byte) error {
+// 	var dec txdata
+// 	if err := dec.UnmarshalJSON(input); err != nil {
+// 		return err
+// 	}
+
+// 	withSignature := dec.V.Sign() != 0 || dec.R.Sign() != 0 || dec.S.Sign() != 0
+// 	if withSignature {
+// 		var V byte
+// 		if isProtectedV(dec.V) {
+// 			chainID := deriveChainID(dec.V).Uint64()
+// 			V = byte(dec.V.Uint64() - 35 - 2*chainID)
+// 		} else {
+// 			V = byte(dec.V.Uint64() - 27)
+// 		}
+// 		if !crypto.ValidateSignatureValues(V, dec.R, dec.S, false) {
+// 			return ErrInvalidSig
+// 		}
+// 	}
+
+// 	*tx = Transaction{data: dec}
+// 	return nil
+// }
 
 // Nonce returns account nonce from Transaction.
 func (tx *Transaction) Nonce() uint64 {
-	return tx.data.AccountNonce
+	return tx.data.nonce()
 }
 
 // CheckNonce returns check nonce from Transaction.
@@ -399,10 +502,10 @@ func (tx *Transaction) CheckNonce() bool {
 // To returns the recipient address of the transaction.
 // It returns nil if the transaction is a contract creation.
 func (tx *Transaction) To() *common.Address {
-	if tx.data.Recipient == nil {
+	if tx.data.to() == nil {
 		return nil
 	}
-	to := *tx.data.Recipient
+	to := *tx.data.to()
 	return &to
 }
 
@@ -412,11 +515,18 @@ func (tx *Transaction) Hash() common.Hash {
 	if hash := tx.hash.Load(); hash != nil {
 		return hash.(common.Hash)
 	}
-	v := hash.FromRLP(tx)
-	tx.hash.Store(v)
-	return v
+
+	var h common.Hash
+	if tx.Type() == LegacyTxType {
+		h = rlpHash(tx.data)
+	} else {
+		h = prefixedRlpHash(tx.Type(), tx.data)
+	}
+	tx.hash.Store(&h)
+	return h
 }
 
+// todo(sun)
 // HashByType hashes the RLP encoding of tx in it's original format (eth or hmy)
 // It uniquely identifies the transaction.
 func (tx *Transaction) HashByType() common.Hash {
@@ -432,10 +542,18 @@ func (tx *Transaction) Size() common.StorageSize {
 	if size := tx.size.Load(); size != nil {
 		return size.(common.StorageSize)
 	}
+
 	c := writeCounter(0)
 	rlp.Encode(&c, &tx.data)
-	tx.size.Store(common.StorageSize(c))
-	return common.StorageSize(c)
+	size := uint64(c)
+
+	// For typed transactions, the encoding also includes the leading type byte
+	if tx.Type() != LegacyTxType {
+		size += 1
+	}
+
+	tx.size.Store(common.StorageSize(size))
+	return common.StorageSize(size)
 }
 
 // IsEthCompatible returns whether the txn is ethereum compatible
@@ -443,21 +561,22 @@ func (tx *Transaction) IsEthCompatible() bool {
 	return params.IsEthCompatible(tx.ChainID())
 }
 
+// todo(sun): do the converted eth transaction need to be updated as well?
 // ConvertToEth converts hmy txn to eth txn by removing the ShardID and ToShardID fields.
 func (tx *Transaction) ConvertToEth() *EthTransaction {
 	var tx2 EthTransaction
-	d := &tx.data
 	d2 := &tx2.data
 
-	d2.AccountNonce = d.AccountNonce
-	d2.Price = new(big.Int).Set(d.Price)
-	d2.GasLimit = d.GasLimit
-	d2.Recipient = copyAddr(d.Recipient)
-	d2.Amount = new(big.Int).Set(d.Amount)
-	d2.Payload = append(d.Payload[:0:0], d.Payload...)
-	d2.V = new(big.Int).Set(d.V)
-	d2.R = new(big.Int).Set(d.R)
-	d2.S = new(big.Int).Set(d.S)
+	d2.AccountNonce = tx.data.nonce()
+	d2.Price = new(big.Int).Set(tx.data.gasPrice())
+	d2.GasLimit = tx.data.gas()
+	d2.Recipient = copyAddr(tx.data.to())
+	d2.Amount = new(big.Int).Set(tx.data.value())
+	d2.Payload = append(tx.data.data()[:0:0], tx.data.data()...)
+	v, r, s := tx.RawSignatureValues()
+	d2.V = new(big.Int).Set(v)
+	d2.R = new(big.Int).Set(r)
+	d2.S = new(big.Int).Set(s)
 
 	copy := tx2.Hash()
 	d2.Hash = &copy
@@ -474,17 +593,17 @@ func (tx *Transaction) ConvertToEth() *EthTransaction {
 // XXX Rename message to something less arbitrary?
 func (tx *Transaction) AsMessage(s Signer) (Message, error) {
 	msg := Message{
-		nonce:      tx.data.AccountNonce,
-		gasLimit:   tx.data.GasLimit,
-		gasPrice:   new(big.Int).Set(tx.data.Price),
-		to:         tx.data.Recipient,
-		amount:     tx.data.Amount,
-		data:       tx.data.Payload,
+		nonce:      tx.data.nonce(),
+		gasLimit:   tx.data.gas(),
+		gasPrice:   new(big.Int).Set(tx.data.gasPrice()),
+		to:         tx.data.to(),
+		amount:     tx.data.value(),
+		data:       tx.data.data(),
 		checkNonce: true,
 	}
 
 	var err error
-	msg.from, err = Sender(s, tx)
+	msg.from, err = Sender(s, tx) // todo(sun)
 	return msg, err
 }
 
@@ -502,16 +621,12 @@ func (tx *Transaction) WithSignature(signer Signer, sig []byte) (*Transaction, e
 
 // Cost returns amount + gasprice * gaslimit.
 func (tx *Transaction) Cost() (*big.Int, error) {
-	total := new(big.Int).Mul(tx.data.Price, new(big.Int).SetUint64(tx.data.GasLimit))
-	total.Add(total, tx.data.Amount)
+	total := new(big.Int).Mul(tx.data.gasPrice(), new(big.Int).SetUint64(tx.data.gas()))
+	total.Add(total, tx.data.value())
 	return total, nil
 }
 
-// RawSignatureValues return raw signature values.
-func (tx *Transaction) RawSignatureValues() (*big.Int, *big.Int, *big.Int) {
-	return tx.data.V, tx.data.R, tx.data.S
-}
-
+// todo(sun)
 // Copy returns a copy of the transaction.
 func (tx *Transaction) Copy() *Transaction {
 	var tx2 Transaction
@@ -534,11 +649,6 @@ func (tx *Transaction) SenderAddress() (common.Address, error) {
 		return common.Address{}, err
 	}
 	return addr, nil
-}
-
-// EffectiveGasPrice returns the effective gas price of the transaction.
-func (tx *Transaction) EffectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
-	return tx.data.effectiveGasPrice(dst, baseFee)
 }
 
 // TxByNonce implements the sort interface to allow sorting a list of transactions
@@ -580,7 +690,7 @@ func (s TxByPriceAndTime) Len() int { return len(s) }
 func (s TxByPriceAndTime) Less(i, j int) bool {
 	// If the prices are equal, use the time the transaction was first seen for
 	// deterministic sorting
-	cmp := s[i].data.Price.Cmp(s[j].data.Price)
+	cmp := s[i].data.gasPrice().Cmp(s[j].data.gasPrice())
 	if cmp == 0 {
 		return s[i].time.Before(s[j].time)
 	}
@@ -841,4 +951,13 @@ func (s InternalTransactions) ToShardID(i int) uint32 {
 // MaxToShardID returns 0, arbitrary value, NOT use
 func (s InternalTransactions) MaxToShardID() uint32 {
 	return 0
+}
+
+// copyAddressPtr copies an address
+func copyAddressPtr(a *common.Address) *common.Address {
+	if a == nil {
+		return nil
+	}
+	cpy := *a
+	return &cpy
 }
