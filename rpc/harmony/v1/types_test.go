@@ -52,7 +52,14 @@ func TestNewReceipt(t *testing.T) {
 		}
 	)
 	t.Run("effectiveGasPrice-transaction", func(t *testing.T) {
-		unsigned := types.NewTransaction(nonce, to, 0, big.NewInt(0), 0, big.NewInt(0), nil)
+		unsigned := types.NewTx(&types.LegacyTx{
+			Nonce:    nonce,
+			To:       &to,
+			Value:    big.NewInt(0),
+			Gas:      0,
+			GasPrice: big.NewInt(0),
+			Data:     nil,
+		})
 		tx, _ := types.SignTx(unsigned, types.HomesteadSigner{}, FaucetPriKey)
 		r, err = NewReceipt(tx, blockHash, blockNumber, blockIndex, receipt)
 		require.NoError(t, err)
@@ -88,7 +95,14 @@ func TestNewReceipt(t *testing.T) {
 		assert.EqualValues(t, "0x1", mustReceiptEffectivePrice.String())
 	})
 	t.Run("contract-address", func(t *testing.T) {
-		unsigned := types.NewTransaction(nonce, to, 0, big.NewInt(0), 0, big.NewInt(0), nil)
+		unsigned := types.NewTx(&types.LegacyTx{
+			Nonce:    nonce,
+			To:       &to,
+			Value:    big.NewInt(0),
+			Gas:      0,
+			GasPrice: big.NewInt(0),
+			Data:     nil,
+		})
 		tx, _ := types.SignTx(unsigned, types.HomesteadSigner{}, FaucetPriKey)
 		r, err = NewReceipt(tx, blockHash, blockNumber, blockIndex, receipt)
 		require.NoError(t, err)

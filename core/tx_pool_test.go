@@ -139,7 +139,14 @@ func transaction(shardID uint32, nonce uint64, gaslimit uint64, key *ecdsa.Priva
 }
 
 func pricedTransaction(shardID uint32, nonce uint64, gaslimit uint64, gasprice *big.Int, key *ecdsa.PrivateKey) types.PoolTransaction {
-	signedTx, _ := types.SignTx(types.NewTransaction(nonce, common.Address{}, shardID, big.NewInt(100000000000), gaslimit, gasprice, nil), types.HomesteadSigner{}, key)
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    nonce,
+		To:       &common.Address{},
+		Value:    big.NewInt(100000000000),
+		Gas:      gaslimit,
+		GasPrice: gasprice,
+	})
+	signedTx, _ := types.SignTx(tx, types.HomesteadSigner{}, key)
 	return signedTx
 }
 
@@ -560,12 +567,17 @@ func TestTransactionNegativeValue(t *testing.T) {
 	pool, key := setupTxPool(nil)
 	defer pool.Stop()
 
-	tx, _ := types.SignTx(
-		types.NewTransaction(0, common.Address{}, 0, big.NewInt(-1), 100, big.NewInt(1), nil),
-		types.HomesteadSigner{}, key)
-	from, _ := deriveSender(tx)
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    0,
+		To:       &common.Address{},
+		Value:    big.NewInt(-1),
+		Gas:      100,
+		GasPrice: big.NewInt(1),
+	})
+	signedTx, _ := types.SignTx(tx, types.HomesteadSigner{}, key)
+	from, _ := deriveSender(signedTx)
 	pool.currentState.AddBalance(from, big.NewInt(1))
-	if err := pool.AddRemote(tx); err != ErrNegativeValue {
+	if err := pool.AddRemote(signedTx); err != ErrNegativeValue {
 		t.Error("expected", ErrNegativeValue, "got", err)
 	}
 }
@@ -613,13 +625,13 @@ func TestTransactionDoubleNonce(t *testing.T) {
 
 	signer := types.HomesteadSigner{}
 	tx1, _ := types.SignTx(
-		types.NewTransaction(0, common.Address{}, 0, big.NewInt(100), 100000, big.NewInt(100e9), nil),
+		types.NewTx(&types.LegacyTx{Nonce: 0, To: &common.Address{}, Value: big.NewInt(100), Gas: 100000, GasPrice: big.NewInt(100e9)}),
 		signer, key)
 	tx2, _ := types.SignTx(
-		types.NewTransaction(0, common.Address{}, 0, big.NewInt(100), 1000000, big.NewInt(101e9), nil), // related to price bump 1%
+		types.NewTx(&types.LegacyTx{Nonce: 0, To: &common.Address{}, Value: big.NewInt(100), Gas: 1000000, GasPrice: big.NewInt(101e9)}), // related to price bump 1%
 		signer, key)
 	tx3, _ := types.SignTx(
-		types.NewTransaction(0, common.Address{}, 0, big.NewInt(100), 1000000, big.NewInt(100e9), nil),
+		types.NewTx(&types.LegacyTx{Nonce: 0, To: &common.Address{}, Value: big.NewInt(100), Gas: 1000000, GasPrice: big.NewInt(100e9)}),
 		signer, key)
 
 	// Add the first two transaction, ensure higher priced stays only
@@ -950,9 +962,7 @@ func TestTransactionQueueAccountLimiting(t *testing.T) {
 //
 // This logic should not hold for local transactions, unless the local tracking
 // mechanism is disabled.
-func TestTransactionQueueGlobalLimiting(t *testing.T) {
-	testTransactionQueueGlobalLimiting(t, false)
-}
+func TestTransactionQueueGlobalLimiting(t *testing.T) { testTransactionQueueGlobalLimiting(t, false) }
 func TestTransactionQueueGlobalLimitingNoLocals(t *testing.T) {
 	testTransactionQueueGlobalLimiting(t, true)
 }

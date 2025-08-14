@@ -84,7 +84,6 @@ type Transaction struct {
 	Gas              hexutil.Uint64 `json:"gas"`
 	GasPrice         *hexutil.Big   `json:"gasPrice"`
 	Hash             common.Hash    `json:"hash"`
-	EthHash          common.Hash    `json:"ethHash"`
 	Input            hexutil.Bytes  `json:"input"`
 	Nonce            hexutil.Uint64 `json:"nonce"`
 	To               string         `json:"to"`
@@ -278,17 +277,16 @@ func NewTransaction(
 	tx *types.Transaction, blockHash common.Hash,
 	blockNumber uint64, timestamp uint64, index uint64,
 ) (*Transaction, error) {
-	from, err := tx.SenderAddress()
+	from, err := types.Sender(types.NewEIP155Signer(tx.ChainId()), tx)
 	if err != nil {
 		return nil, err
 	}
 	v, r, s := tx.RawSignatureValues()
 
 	result := &Transaction{
-		Gas:       hexutil.Uint64(tx.GasLimit()),
+		Gas:       hexutil.Uint64(tx.Gas()),
 		GasPrice:  (*hexutil.Big)(tx.GasPrice()),
 		Hash:      tx.Hash(),
-		EthHash:   tx.ConvertToEth().Hash(),
 		Input:     hexutil.Bytes(tx.Data()),
 		Nonce:     hexutil.Uint64(tx.Nonce()),
 		Value:     (*hexutil.Big)(tx.Value()),
@@ -648,7 +646,6 @@ func blockWithTxHashFromBlock(b *types.Block) *BlockWithTxHash {
 
 	for _, tx := range b.Transactions() {
 		blk.Transactions = append(blk.Transactions, tx.Hash())
-		blk.EthTransactions = append(blk.EthTransactions, tx.ConvertToEth().Hash())
 	}
 	return blk
 }

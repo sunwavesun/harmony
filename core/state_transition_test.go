@@ -102,15 +102,14 @@ func TestCollectGas(t *testing.T) {
 		t.Fatal("No fee collectors set")
 	}
 
-	tx := types.NewTransaction(
-		0, // nonce
-		common.BytesToAddress([]byte("to")),
-		0,                 // shardid
-		big.NewInt(1e18),  // amount, 1 ONE
-		50000,             // gasLimit, intentionally higher than the 21000 required
-		big.NewInt(100e9), // gasPrice
-		[]byte{},          // payload, intentionally empty
-	)
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    0, // nonce
+		To:       common.BytesToAddress([]byte("to")),
+		Value:    big.NewInt(1e18),  // amount, 1 ONE
+		Gas:      50000,             // gasLimit, intentionally higher than the 21000 required
+		GasPrice: big.NewInt(100e9), // gasPrice
+		Data:     []byte{},          // payload, intentionally empty
+	})
 	from, _ := tx.SenderAddress()
 	initialBalance := big.NewInt(2e18)
 	db.AddBalance(from, initialBalance)
@@ -178,15 +177,14 @@ func TestCollectGasRounding(t *testing.T) {
 		t.Fatal("No fee collectors set")
 	}
 
-	tx := types.NewTransaction(
-		0, // nonce
-		common.BytesToAddress([]byte("to")),
-		0,                // shardid
-		big.NewInt(1e18), // amount, 1 ONE
-		5,                // gasLimit
-		big.NewInt(1),    // gasPrice
-		[]byte{},         // payload, intentionally empty
-	)
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    0, // nonce
+		To:       common.BytesToAddress([]byte("to")),
+		Value:    big.NewInt(1e18), // amount, 1 ONE
+		Gas:      5,                // gasLimit
+		GasPrice: big.NewInt(1),    // gasPrice
+		Data:     []byte{},         // payload, intentionally empty
+	})
 	from, _ := tx.SenderAddress()
 	initialBalance := big.NewInt(2e18)
 	db.AddBalance(from, initialBalance)
@@ -229,15 +227,14 @@ func TestPrepare(t *testing.T) {
 		t.Fatal("No fee collectors set")
 	}
 
-	tx := types.NewTransaction(
-		0, // nonce
-		common.BytesToAddress([]byte("to")),
-		0,                 // shardid
-		big.NewInt(1e18),  // amount, 1 ONE
-		50000,             // gasLimit, intentionally higher than the 21000 required
-		big.NewInt(100e9), // gasPrice
-		[]byte{},          // payload, intentionally empty
-	)
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    0, // nonce
+		To:       common.BytesToAddress([]byte("to")),
+		Value:    big.NewInt(1e18),  // amount, 1 ONE
+		Gas:      50000,             // gasLimit, intentionally higher than the 21000 required
+		GasPrice: big.NewInt(100e9), // gasPrice
+		Data:     []byte{},          // payload, intentionally empty
+	})
 	from, _ := tx.SenderAddress()
 	initialBalance := big.NewInt(2e18)
 	db.AddBalance(from, initialBalance)

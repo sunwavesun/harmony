@@ -93,6 +93,7 @@ type Message interface {
 	Data() []byte
 	Type() types.TransactionType
 	BlockNum() *big.Int
+	AccessList() []types.AccessTuple
 }
 
 // ExecutionResult is the return value from a transaction committed to the DB
@@ -196,15 +197,19 @@ func (st *StateTransition) buyGas() error {
 func (st *StateTransition) preCheck() error {
 	// Make sure this transaction's nonce is correct.
 	if st.msg.CheckNonce() {
-		nonce := st.state.GetNonce(st.msg.From())
-
-		if nonce < st.msg.Nonce() {
-			return ErrNonceTooHigh
-		} else if nonce > st.msg.Nonce() {
+		if st.state.GetNonce(st.msg.From()) > st.msg.Nonce() {
 			return ErrNonceTooLow
 		}
 	}
-	return st.buyGas()
+	// Make sure the sender has enough balance to cover the cost.
+	// This is not checked before entering the pool, so has to be checked now.
+	if err := st.buyGas(); err != nil {
+		return err
+	}
+	if st.msg.Value().Sign() < 0 {
+		return ErrNegativeValue
+	}
+	return nil
 }
 
 // TransitionDb will transition the state by applying the current message and
@@ -221,7 +226,7 @@ func (st *StateTransition) TransitionDb() (ExecutionResult, error) {
 	contractCreation := msg.To() == nil
 
 	// Pay intrinsic gas
-	gas, err := vm.IntrinsicGas(st.data, contractCreation, homestead, istanbul, false)
+	gas, err := IntrinsicGas(st.data, st.msg.AccessList(), contractCreation, homestead, istanbul)
 	if err != nil {
 		return ExecutionResult{}, err
 	}
@@ -232,6 +237,16 @@ func (st *StateTransition) TransitionDb() (ExecutionResult, error) {
 	// Execute the preparatory steps for state transition which includes:
 	// - reset transient storage(eip 1153)
 	st.evm.StateDB.Prepare()
+	// - add access list to state
+	st.state.AddAddressToAccessList(st.msg.From())
+	st.state.AddAddressToAccessList(st.to())
+	for _, addr := range st.msg.AccessList() {
+		st.state.AddAddressToAccessList(addr.Address)
+		for _, key := range addr.StorageKeys {
+			st.state.AddSlotToAccessList(addr.Address, key)
+		}
+	}
+
 	evm := st.evm
 
 	var ret []byte
@@ -327,7 +342,7 @@ func (st *StateTransition) StakingTransitionDb() (usedGas uint64, err error) {
 	istanbul := st.evm.ChainConfig().IsIstanbul(st.evm.EpochNumber)
 
 	// Pay intrinsic gas
-	gas, err := vm.IntrinsicGas(st.data, false, homestead, istanbul, msg.Type() == types.StakeCreateVal)
+	gas, err := IntrinsicGas(st.data, nil, false, homestead, istanbul)
 
 	if err != nil {
 		return 0, err

@@ -369,10 +369,16 @@ func (es *EventSystem) broadcast(filters filterIndex, ev interface{}) {
 			hashes = append(hashes, tx.Hash())
 		}
 		for _, f := range filters[PendingTransactionsSubscription] {
+			if f.created.After(e.Time) {
+				continue
+			}
 			f.hashes <- hashes
 		}
 	case core.ChainEvent:
 		for _, f := range filters[BlocksSubscription] {
+			if f.created.After(e.Time) {
+				continue
+			}
 			f.headers <- e.Block.Header()
 		}
 		if es.lightMode && len(filters[LogsSubscription]) > 0 {

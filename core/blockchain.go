@@ -110,7 +110,7 @@ type BlockChain interface {
 	// WriteBlockWithoutState writes only the block and its metadata to the database,
 	// but does not write any state. This is used to construct competing side forks
 	// up to the point where they exceed the canonical total difficulty.
-	WriteBlockWithoutState(block *types.Block) (err error)
+	WriteBlockWithoutState(block *types.Block, sigs []byte) (err error)
 	// WriteBlockWithState writes the block and all associated state to the database.
 	WriteBlockWithState(
 		block *types.Block, receipts []*types.Receipt,
@@ -127,10 +127,10 @@ type BlockChain interface {
 	// wrong.
 	//
 	// After insertion is done, all accumulated events will be fired.
-	InsertChain(chain types.Blocks, verifyHeaders bool) (int, error)
+	InsertChain(chain types.Blocks, sigs [][]byte, verifyHeaders bool) (int, error)
 	// InsertReceiptChain attempts to complete an already existing header chain with
 	// transaction and receipt data.
-	InsertReceiptChain(blockChain types.Blocks, receiptChain []types.Receipts) (int, error)
+	InsertReceiptChain(blockChain types.Blocks, receiptChain []types.Receipts, sigs [][]byte) (int, error)
 	// LeaderRotationMeta returns the number of continuous blocks by the leader.
 	LeaderRotationMeta() LeaderRotationMeta
 	// BadBlocks returns a list of the last 'bad blocks' that

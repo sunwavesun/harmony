@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/harmony-one/harmony/core/types"
 	"github.com/harmony-one/harmony/internal/params"
 )
 
@@ -55,14 +56,14 @@ func callGas(isEip150 bool, availableGas, base uint64, callCost *big.Int) (uint6
 	return callCost.Uint64(), nil
 }
 
-// IntrinsicGas computes the 'intrinsic gas' for a message with the given data.
-func IntrinsicGas(data []byte, contractCreation, homestead, istanbul, isValidatorCreation bool) (uint64, error) {
-	// Set the starting gas for the raw transaction
+// IntrinsicGas computes the intrinsic gas consumed by a transaction, which is charged
+// before execution is initiated. The gas value depends on the transaction type, the
+// data contents and the executing EVM rules.
+func IntrinsicGas(data []byte, accessList types.AccessList, contractCreation, homestead, istanbul, isEIP3860 bool) (uint64, error) {
+	// Set the starting gas for the transaction
 	var gas uint64
 	if contractCreation && homestead {
 		gas = params.TxGasContractCreation
-	} else if isValidatorCreation {
-		gas = params.TxGasValidatorCreation
 	} else {
 		gas = params.TxGas
 	}
@@ -70,8 +71,8 @@ func IntrinsicGas(data []byte, contractCreation, homestead, istanbul, isValidato
 	if len(data) > 0 {
 		// Zero and non-zero bytes are priced differently
 		var nz uint64
-		for _, byt := range data {
-			if byt != 0 {
+		for _, b := range data {
+			if b != 0 {
 				nz++
 			}
 		}
@@ -81,15 +82,30 @@ func IntrinsicGas(data []byte, contractCreation, homestead, istanbul, isValidato
 			nonZeroGas = params.TxDataNonZeroGasEIP2028
 		}
 		if (math.MaxUint64-gas)/nonZeroGas < nz {
-			return 0, ErrOutOfGas
+			return 0, ErrGasUintOverflow
 		}
 		gas += nz * nonZeroGas
 
 		z := uint64(len(data)) - nz
 		if (math.MaxUint64-gas)/params.TxDataZeroGas < z {
-			return 0, ErrOutOfGas
+			return 0, ErrGasUintOverflow
 		}
 		gas += z * params.TxDataZeroGas
+	}
+	if isEIP3860 {
+		var initCodeGas uint64
+		if contractCreation {
+			initCodeGas = (uint64(len(data)) + 31) / 32 * params.InitCodeWordGas
+		}
+		if (math.MaxUint64 - gas) < initCodeGas {
+			return 0, ErrGasUintOverflow
+		}
+		gas += initCodeGas
+	}
+	// Add in access list gas cost
+	if accessList != nil {
+		gas += uint64(len(accessList)) * params.TxAccessListAddressGas
+		gas += uint64(accessList.StorageKeys()) * params.TxAccessListStorageKeyGas
 	}
 	return gas, nil
 }

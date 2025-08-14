@@ -93,16 +93,35 @@ type CoreTransaction interface {
 	ChainID() *big.Int
 }
 
-// Transaction struct.
+// Transaction is an Ethereum transaction.
 type Transaction struct {
-	data txdata
+	inner TxData    // tx payload
+	time  time.Time // time of arrival
+
 	// caches
 	hash atomic.Value
 	size atomic.Value
 	from atomic.Value
-	// time at which the node received the tx
-	// and not the time set by the sender
-	time time.Time
+}
+
+// TxData is the underlying data of a transaction.
+// It can be of different types.
+type TxData interface {
+	Type() byte
+	copy() TxData
+	chainID() *big.Int
+	accessList() AccessList
+	nonce() uint64
+	gas() uint64
+	gasPrice() *big.Int
+	to() *common.Address
+	value() *big.Int
+	data() []byte
+	v() *big.Int
+	r() *big.Int
+	s() *big.Int
+	rawSignatureValues() (V, R, S *big.Int)
+	setSignatureValues(V, R, S *big.Int)
 }
 
 // String print mode string
@@ -192,13 +211,13 @@ type txdataMarshaling struct {
 	S            *hexutil.Big
 }
 
-// NewTransaction returns new transaction, this method is to create same shard transaction
+// NewTransaction creates a new transaction.
 func NewTransaction(nonce uint64, to common.Address, shardID uint32, amount *big.Int, gasLimit uint64, gasPrice *big.Int, data []byte) *Transaction {
 	return newTransaction(nonce, &to, shardID, amount, gasLimit, gasPrice, data)
 }
 
 // NewCrossShardTransaction returns new cross shard transaction
-func NewCrossShardTransaction(nonce uint64, to *common.Address, shardID uint32, toShardID uint32, amount *big.Int, gasLimit uint64, gasPrice *big.Int, data []byte) *Transaction {
+func NewCrossShardTransaction(nonce uint64, to *common.Address, shardID, toShardID uint32, amount *big.Int, gasLimit uint64, gasPrice *big.Int, data []byte) *Transaction {
 	return newCrossShardTransaction(nonce, to, shardID, toShardID, amount, gasLimit, gasPrice, data)
 }
 

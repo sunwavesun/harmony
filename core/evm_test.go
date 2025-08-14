@@ -63,7 +63,14 @@ func TestEVMStaking(t *testing.T) {
 	header.SetNumber(big.NewInt(1))
 
 	// fake transaction
-	tx := types.NewTransaction(1, common.BytesToAddress([]byte{0x11}), 0, big.NewInt(111), 1111, big.NewInt(11111), []byte{0x11, 0x11, 0x11})
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    1,
+		To:       common.BytesToAddress([]byte{0x11}),
+		Value:    big.NewInt(111),
+		Gas:      1111,
+		GasPrice: big.NewInt(11111),
+		Data:     []byte{0x11, 0x11, 0x11},
+	})
 	// transaction as message (chainId = 2)
 	msg, _ := tx.AsMessage(types.NewEIP155Signer(common.Big2))
 	// context
@@ -435,7 +442,14 @@ func TestWriteCapablePrecompilesIntegration(t *testing.T) {
 	key, _ := crypto.GenerateKey()
 	chain, db, header, _ := getTestEnvironment(*key)
 	// gp := new(GasPool).AddGas(math.MaxUint64)
-	tx := types.NewTransaction(1, common.BytesToAddress([]byte{0x11}), 0, big.NewInt(111), 1111, big.NewInt(11111), []byte{0x11, 0x11, 0x11})
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    1,
+		To:       common.BytesToAddress([]byte{0x11}),
+		Value:    big.NewInt(111),
+		Gas:      1111,
+		GasPrice: big.NewInt(11111),
+		Data:     []byte{0x11, 0x11, 0x11},
+	})
 	msg, _ := tx.AsMessage(types.NewEIP155Signer(common.Big2))
 	ctx := NewEVMContext(msg, header, chain, nil /* coinbase */)
 	evm := vm.NewEVM(ctx, db, params.TestChainConfig, vm.Config{})

@@ -61,7 +61,6 @@ import (
 	"github.com/harmony-one/harmony/numeric"
 	"github.com/harmony-one/harmony/shard"
 
-	"github.com/harmony-one/harmony/hmy/tracers"
 	"github.com/harmony-one/harmony/shard/committee"
 	"github.com/harmony-one/harmony/staking/apr"
 	"github.com/harmony-one/harmony/staking/effective"
@@ -1390,110 +1389,19 @@ func SetReceiptsData(config *params.ChainConfig, block *types.Block, receipts ty
 // InsertReceiptChain attempts to complete an already existing header chain with
 // transaction and receipt data.
 func (bc *BlockChainImpl) InsertReceiptChain(blockChain types.Blocks, receiptChain []types.Receipts) (int, error) {
-	// Do a sanity check that the provided chain is actually ordered and linked
-	for i := 1; i < len(blockChain); i++ {
-		if blockChain[i].NumberU64() != blockChain[i-1].NumberU64()+1 || blockChain[i].ParentHash() != blockChain[i-1].Hash() {
-			utils.Logger().Error().
-				Str("number", blockChain[i].Number().String()).
-				Str("hash", blockChain[i].Hash().Hex()).
-				Str("parent", blockChain[i].ParentHash().Hex()).
-				Str("prevnumber", blockChain[i-1].Number().String()).
-				Str("prevhash", blockChain[i-1].Hash().Hex()).
-				Msg("Non contiguous receipt insert")
-			return 0, fmt.Errorf("non contiguous insert: item %d is #%d [%x…], item %d is #%d [%x…] (parent [%x…])", i-1, blockChain[i-1].NumberU64(),
-				blockChain[i-1].Hash().Bytes()[:4], i, blockChain[i].NumberU64(), blockChain[i].Hash().Bytes()[:4], blockChain[i].ParentHash().Bytes()[:4])
-		}
-	}
+	bc.wg.Add(1)
+	defer bc.wg.Done()
 
-	bc.chainmu.Lock()
-	defer bc.chainmu.Unlock()
-
-	var (
-		stats = struct{ processed, ignored int32 }{}
-		start = time.Now()
-		bytes = 0
-		batch = bc.db.NewBatch()
-	)
-	for i, block := range blockChain {
-		receipts := receiptChain[i]
-		// Short circuit insertion if shutting down or processing failed
-		if atomic.LoadInt32(&bc.procInterrupt) == 1 {
-			return 0, fmt.Errorf("Premature abort during blocks processing")
-		}
-		// Add header if the owner header is unknown
-		if !bc.HasHeader(block.Hash(), block.NumberU64()) {
-			if err := rawdb.WriteHeader(batch, block.Header()); err != nil {
-				return 0, err
-			}
-			// return 0, fmt.Errorf("containing header #%d [%x…] unknown", block.Number(), block.Hash().Bytes()[:4])
-		}
-		// Skip if the entire data is already known
-		if bc.HasBlock(block.Hash(), block.NumberU64()) {
-			stats.ignored++
+	for i := 0; i < len(blockChain) && i < len(receiptChain); i++ {
+		// If the receipts are for a block that's not in the canonical chain, skip it
+		if rawdb.ReadCanonicalHash(bc.db, blockChain[i].NumberU64()) != blockChain[i].Hash() {
 			continue
 		}
-		// Compute all the non-consensus fields of the receipts
-		if err := SetReceiptsData(bc.chainConfig, block, receipts); err != nil {
-			return 0, fmt.Errorf("failed to set receipts data: %v", err)
-		}
-		// Write all the data out into the database
-		if err := rawdb.WriteBody(batch, block.Hash(), block.NumberU64(), block.Body()); err != nil {
-			return 0, err
-		}
-		if err := rawdb.WriteReceipts(batch, block.Hash(), block.NumberU64(), receipts); err != nil {
-			return 0, err
-		}
-		if err := rawdb.WriteBlockTxLookUpEntries(batch, block); err != nil {
-			return 0, err
-		}
-		if err := rawdb.WriteBlockStxLookUpEntries(batch, block); err != nil {
-			return 0, err
-		}
-
-		isNewEpoch := block.IsLastBlockInEpoch()
-		if isNewEpoch {
-			epoch := block.Header().Epoch()
-			nextEpoch := epoch.Add(epoch, common.Big1)
-			err := rawdb.WriteShardStateBytes(batch, nextEpoch, block.Header().ShardState())
-			if err != nil {
-				utils.Logger().Error().Err(err).Msg("failed to store shard state")
-				return 0, err
-			}
-		}
-
-		stats.processed++
-
-		if batch.ValueSize() >= ethdb.IdealBatchSize {
-			if err := batch.Write(); err != nil {
-				return 0, err
-			}
-			bytes += batch.ValueSize()
-			batch.Reset()
-		}
+		// Write the receipts, and any derived data
+		rawdb.WriteReceipts(bc.db, blockChain[i].Hash(), blockChain[i].NumberU64(), receiptChain[i])
 	}
-	if batch.ValueSize() > 0 {
-		bytes += batch.ValueSize()
-		if err := batch.Write(); err != nil {
-			return 0, err
-		}
-	}
-
-	// Update the head fast sync block if better
-	head := blockChain[len(blockChain)-1]
-	rawdb.WriteHeadFastBlockHash(bc.db, head.Hash())
-	bc.currentFastBlock.Store(head)
-
-	utils.Logger().Info().
-		Int32("count", stats.processed).
-		Str("elapsed", common.PrettyDuration(time.Since(start)).String()).
-		Str("age", common.PrettyAge(time.Unix(head.Time().Int64(), 0)).String()).
-		Str("head", head.Number().String()).
-		Str("hash", head.Hash().Hex()).
-		Str("size", common.StorageSize(bytes).String()).
-		Int32("ignored", stats.ignored).
-		Msg("Imported new block receipts")
-
-	return int(stats.processed), nil
+	// TODO: What to return here?
+	return 0, nil
 }
 
 var lastWrite uint64
@@ -1710,243 +1618,33 @@ func (bc *BlockChainImpl) LeaderRotationMeta() LeaderRotationMeta {
 // insertChain will execute the actual chain insertion and event aggregation. The
 // only reason this method exists as a separate one is to make locking cleaner
 // with deferred statements.
-func (bc *BlockChainImpl) insertChain(chain types.Blocks, verifyHeaders bool) (int, []interface{}, []*types.Log, error) {
-	// Sanity check that we have something meaningful to import
-	if len(chain) == 0 {
-		return 0, nil, nil, ErrEmptyChain
-	}
-	// Do a sanity check that the provided chain is actually ordered and linked
-	for i := 1; i < len(chain); i++ {
-		if chain[i].NumberU64() != chain[i-1].NumberU64()+1 || chain[i].ParentHash() != chain[i-1].Hash() {
-			// Chain broke ancestry, log a message (programming error) and skip insertion
-			utils.Logger().Error().
-				Str("number", chain[i].Number().String()).
-				Str("hash", chain[i].Hash().Hex()).
-				Str("parent", chain[i].ParentHash().Hex()).
-				Str("prevnumber", chain[i-1].Number().String()).
-				Str("prevhash", chain[i-1].Hash().Hex()).
-				Msg("insertChain: non contiguous block insert")
-
-			return 0, nil, nil, fmt.Errorf("non contiguous insert: item %d is #%d [%x…], item %d is #%d [%x…] (parent [%x…])", i-1, chain[i-1].NumberU64(),
-				chain[i-1].Hash().Bytes()[:4], i, chain[i].NumberU64(), chain[i].Hash().Bytes()[:4], chain[i].ParentHash().Bytes()[:4])
+func (bc *BlockChainImpl) insertChain(chain types.Blocks, verifyHeaders bool) (int, error) {
+	// Do a quick check of the header validity of the entire chain
+	if verifyHeaders {
+		if err := bc.engine.VerifyHeaders(bc, chain.ToHeaders(), true); err != nil {
+			utils.Logger().Error().Err(err).Msg("invalid block header")
+			return 0, err
 		}
 	}
 
-	// A queued approach to delivering events. This is generally
-	// faster than direct delivery and requires much less mutex
-	// acquiring.
+	// Make sure the chain is contiguous and has the same genesis
+	for i := 1; i < len(chain); i++ {
+		if chain[i].NumberU64() != chain[i-1].NumberU64()+1 || chain[i].ParentHash() != chain[i-1].Hash() {
+			utils.Logger().Error().Uint64("block number", chain[i].NumberU64()).Str("block hash", chain[i].Hash().String()).Msg("non-contiguous chain")
+			return 0, ErrNonContiguousBlock
+		}
+	}
+	// Generate all the needed events and send them out at once
 	var (
-		stats         = insertStats{startTime: mclock.Now()}
-		events        = make([]interface{}, 0, len(chain))
+		events        []interface{}
 		lastCanon     *types.Block
 		coalescedLogs []*types.Log
 	)
-
-	var verifyHeadersResults <-chan error
-
-	// If the block header chain has not been verified, conduct header verification here.
-	if verifyHeaders {
-		headers := make([]*block.Header, len(chain))
-		seals := make([]bool, len(chain))
-
-		for i, block := range chain {
-			headers[i] = block.Header()
-			seals[i] = true
-		}
-		// Note that VerifyHeaders verifies headers in the chain in parallel
-		abort, results := bc.Engine().VerifyHeaders(bc, headers, seals)
-		verifyHeadersResults = results
-		defer close(abort)
-	}
-
-	// Start a parallel signature recovery (signer will fluke on fork transition, minimal perf loss)
-	//senderCacher.recoverFromBlocks(types.MakeSigner(bc.chainConfig, chain[0].Number()), chain)
-
-	// Iterate over the blocks and insert when the verifier permits
-	for i, block := range chain {
-		// If the chain is terminating, stop processing blocks
-		if atomic.LoadInt32(&bc.procInterrupt) == 1 {
-			utils.Logger().Debug().Msg("Premature abort during blocks processing")
-			break
-		}
-		// Wait for the block's verification to complete
-		bstart := time.Now()
-
-		var err error
-		if verifyHeaders {
-			err = <-verifyHeadersResults
-		}
-		if err == nil {
-			err = NewBlockValidator(bc).ValidateBody(block)
-		}
-		switch {
-		case errors.Is(err, ErrKnownBlock):
-			return i, events, coalescedLogs, err
-
-		case err == consensus_engine.ErrFutureBlock:
-			return i, events, coalescedLogs, err
-
-		case errors.Is(err, consensus_engine.ErrUnknownAncestor):
-			return i, events, coalescedLogs, err
-
-		case errors.Is(err, consensus_engine.ErrPrunedAncestor):
-			// TODO: add fork choice mechanism
-			// Block competing with the canonical chain, store in the db, but don't process
-			// until the competitor TD goes above the canonical TD
-			//currentBlock := bc.CurrentBlock()
-			//localTd := bc.GetTd(currentBlock.Hash(), currentBlock.NumberU64())
-			//externTd := new(big.Int).Add(bc.GetTd(block.ParentHash(), block.NumberU64()-1), block.Difficulty())
-			//if localTd.Cmp(externTd) > 0 {
-			//	if err = bc.WriteBlockWithoutState(block, externTd); err != nil {
-			//		return i, events, coalescedLogs, err
-			//	}
-			//	continue
-			//}
-			// Competitor chain beat canonical, gather all blocks from the common ancestor
-			var winner []*types.Block
-
-			parent := bc.GetBlock(block.ParentHash(), block.NumberU64()-1)
-			for parent != nil && !bc.HasState(parent.Root()) {
-				winner = append(winner, parent)
-				parent = bc.GetBlock(parent.ParentHash(), parent.NumberU64()-1)
-			}
-			for j := 0; j < len(winner)/2; j++ {
-				winner[j], winner[len(winner)-1-j] = winner[len(winner)-1-j], winner[j]
-			}
-			// Prune in case non-empty winner chain
-			if len(winner) > 0 {
-				// Import all the pruned blocks to make the state available
-				_, evs, logs, err := bc.insertChain(winner, true /* verifyHeaders */)
-				events, coalescedLogs = evs, logs
-
-				if err != nil {
-					return i, events, coalescedLogs, err
-				}
-			}
-
-		case err != nil:
-			bc.reportBlock(block, nil, err)
-			return i, events, coalescedLogs, err
-		}
-
-		// Create a new statedb using the parent block and report an
-		// error if it fails.
-		var parent *types.Block
-		if i == 0 {
-			parent = bc.GetBlock(block.ParentHash(), block.NumberU64()-1)
-		} else {
-			parent = chain[i-1]
-		}
-		state, err := state.New(parent.Root(), bc.stateCache, bc.snaps)
-		if err != nil {
-			return i, events, coalescedLogs, err
-		}
-		vmConfig := bc.vmConfig
-		if bc.trace {
-			ev := TraceEvent{
-				Tracer: &tracers.ParityBlockTracer{
-					Hash:   block.Hash(),
-					Number: block.NumberU64(),
-				},
-			}
-			vmConfig = vm.Config{
-				Debug:  true,
-				Tracer: ev.Tracer,
-			}
-			events = append(events, ev)
-		}
-		// Process block using the parent state as reference point.
-		substart := time.Now()
-		receipts, cxReceipts, stakeMsgs, logs, usedGas, payout, newState, err := bc.processor.Process(
-			block, state, vmConfig, true,
-		)
-		state = newState // update state in case the new state is cached.
-		if err != nil {
-			bc.reportBlock(block, receipts, err)
-			return i, events, coalescedLogs, err
-		}
-
-		// Update the metrics touched during block processing
-		accountReadTimer.Update(state.AccountReads)           // Account reads are complete, we can mark them
-		storageReadTimer.Update(state.StorageReads)           // Storage reads are complete, we can mark them
-		accountUpdateTimer.Update(state.AccountUpdates)       // Account updates are complete, we can mark them
-		storageUpdateTimer.Update(state.StorageUpdates)       // Storage updates are complete, we can mark them
-		triehash := state.AccountHashes + state.StorageHashes // Save to not double count in validation
-		trieproc := state.AccountReads + state.AccountUpdates
-		trieproc += state.StorageReads + state.StorageUpdates
-		blockExecutionTimer.Update(time.Since(substart) - trieproc - triehash)
-
-		// Validate the state using the default validator
-		substart = time.Now()
-		if err := bc.validator.ValidateState(
-			block, state, receipts, cxReceipts, usedGas,
-		); err != nil {
-			bc.reportBlock(block, receipts, err)
-			return i, events, coalescedLogs, err
-		}
-		proctime := time.Since(bstart)
-
-		// Update the metrics touched during block validation
-		accountHashTimer.Update(state.AccountHashes) // Account hashes are complete, we can mark them
-		storageHashTimer.Update(state.StorageHashes) // Storage hashes are complete, we can mark them
-		blockValidationTimer.Update(time.Since(substart) - (state.AccountHashes + state.StorageHashes - triehash))
-
-		// Write the block to the chain and get the status.
-		substart = time.Now()
-		status, err := bc.WriteBlockWithState(
-			block, receipts, cxReceipts, stakeMsgs, payout, state,
-		)
-		if err != nil {
-			return i, events, coalescedLogs, err
-		}
-		logger := utils.Logger().With().
-			Str("number", block.Number().String()).
-			Str("hash", block.Hash().Hex()).
-			Int("uncles", len(block.Uncles())).
-			Int("txs", len(block.Transactions())).
-			Int("stakingTxs", len(block.StakingTransactions())).
-			Uint64("gas", block.GasUsed()).
-			Str("elapsed", common.PrettyDuration(time.Since(bstart)).String()).
-			Logger()
-
-		// Update the metrics touched during block commit
-		accountCommitTimer.Update(state.AccountCommits) // Account commits are complete, we can mark them
-		storageCommitTimer.Update(state.StorageCommits) // Storage commits are complete, we can mark them
-
-		blockWriteTimer.Update(time.Since(substart) - state.AccountCommits - state.StorageCommits)
-		blockInsertTimer.UpdateSince(bstart)
-
-		switch status {
-		case CanonStatTy:
-			logger.Info().Msgf("Inserted new block s: %d e: %d n:%d", block.ShardID(), block.Epoch().Uint64(), block.NumberU64())
-			coalescedLogs = append(coalescedLogs, logs...)
-			blockInsertTimer.UpdateSince(bstart)
-			events = append(events, ChainEvent{block, block.Hash(), logs})
-			lastCanon = block
-
-			// used for tikv mode, writer node will publish update to all reader node
-			if bc.isInitTiKV() {
-				err = redis_helper.PublishShardUpdate(bc.ShardID(), block.NumberU64(), logs)
-				if err != nil {
-					utils.Logger().Warn().Err(err).Msg("redis publish shard update error")
-				}
-			}
-
-			// Only count canonical blocks for GC processing time
-			bc.gcproc += proctime
-		}
-
-		stats.processed++
-		stats.usedGas += usedGas
-		cache, _ := bc.stateCache.TrieDB().Size()
-		stats.report(chain, i, cache)
-	}
-	// Append a single chain head event if we've progressed the chain
-	if lastCanon != nil && bc.CurrentBlock().Hash() == lastCanon.Hash() {
-		events = append(events, ChainHeadEvent{lastCanon})
-	}
-
-	return 0, events, coalescedLogs, nil
+	bc.chainHeadFeed.Send(ChainEvent{
+		Block: chain[len(chain)-1],
+		Hash:  chain[len(chain)-1].Hash(),
+	})
+	return 0, nil
 }
 
 // insertStats tracks and reports on block insertion.

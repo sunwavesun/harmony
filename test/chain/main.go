@@ -71,9 +71,9 @@ func init() {
 	thirdRandomUserAddress := crypto.PubkeyToAddress(thirdRandomUserKey.PublicKey)
 
 	//Transactions by first, second and third user with different staking amounts.
-	tx1, _ := types.SignTx(types.NewTransaction(0, firstRandomUserAddress, 0, big.NewInt(10), params.TxGas, nil, nil), types.HomesteadSigner{}, FaucetPriKey)
-	tx2, _ := types.SignTx(types.NewTransaction(1, secondRandomUserAddress, 0, big.NewInt(20), params.TxGas, nil, nil), types.HomesteadSigner{}, FaucetPriKey)
-	tx3, _ := types.SignTx(types.NewTransaction(2, thirdRandomUserAddress, 0, big.NewInt(30), params.TxGas, nil, nil), types.HomesteadSigner{}, FaucetPriKey)
+	tx1, _ := types.SignTx(types.NewTx(&types.LegacyTx{Nonce: 0, To: &firstRandomUserAddress, Value: big.NewInt(10), Gas: params.TxGas}), types.HomesteadSigner{}, FaucetPriKey)
+	tx2, _ := types.SignTx(types.NewTx(&types.LegacyTx{Nonce: 1, To: &secondRandomUserAddress, Value: big.NewInt(20), Gas: params.TxGas}), types.HomesteadSigner{}, FaucetPriKey)
+	tx3, _ := types.SignTx(types.NewTx(&types.LegacyTx{Nonce: 2, To: &thirdRandomUserAddress, Value: big.NewInt(30), Gas: params.TxGas}), types.HomesteadSigner{}, FaucetPriKey)
 	pendingTxs = append(pendingTxs, tx1)
 	pendingTxs = append(pendingTxs, tx2)
 	pendingTxs = append(pendingTxs, tx3)
@@ -109,7 +109,7 @@ func fundFaucetContract(chain core.BlockChain) {
 		randomUserKey, _ := crypto.GenerateKey()
 		randomUserAddress := crypto.PubkeyToAddress(randomUserKey.PublicKey)
 		amount := i*100000 + 37 // Put different amount in each  account.
-		tx, _ := types.SignTx(types.NewTransaction(nonce+uint64(i), randomUserAddress, 0, big.NewInt(int64(amount)), params.TxGas, nil, nil), types.HomesteadSigner{}, FaucetPriKey)
+		tx, _ := types.SignTx(types.NewTx(&types.LegacyTx{Nonce: nonce + uint64(i), To: &randomUserAddress, Value: big.NewInt(int64(amount)), Gas: params.TxGas}), types.HomesteadSigner{}, FaucetPriKey)
 		allRandomUserAddress = append(allRandomUserAddress, randomUserAddress)
 		allRandomUserKey = append(allRandomUserKey, randomUserKey)
 		txs = append(txs, tx)
@@ -117,7 +117,7 @@ func fundFaucetContract(chain core.BlockChain) {
 	amount := 720000
 	randomUserKey, _ := crypto.GenerateKey()
 	randomUserAddress := crypto.PubkeyToAddress(randomUserKey.PublicKey)
-	tx, _ := types.SignTx(types.NewTransaction(nonce+uint64(4), randomUserAddress, 0, big.NewInt(int64(amount)), params.TxGas, nil, nil), types.HomesteadSigner{}, FaucetPriKey)
+	tx, _ := types.SignTx(types.NewTx(&types.LegacyTx{Nonce: nonce + uint64(4), To: &randomUserAddress, Value: big.NewInt(int64(amount)), Gas: params.TxGas}), types.HomesteadSigner{}, FaucetPriKey)
 	txs = append(txs, tx)
 
 	txmap := make(map[common.Address]types.Transactions)
@@ -163,7 +163,7 @@ func callFaucetContractToFundAnAddress(chain core.BlockChain) {
 	var callEnc []byte
 	callEnc = append(callEnc, callFuncHex...)
 	callEnc = append(callEnc, paddedAddress...)
-	callfaucettx, _ := types.SignTx(types.NewTransaction(nonce+uint64(5), faucetContractAddress, 0, big.NewInt(0), params.TxGasContractCreation*10, nil, callEnc), types.HomesteadSigner{}, FaucetPriKey)
+	callfaucettx, _ := types.SignTx(types.NewTx(&types.LegacyTx{Nonce: nonce + uint64(5), To: &faucetContractAddress, Value: big.NewInt(0), Gas: params.TxGasContractCreation * 10, Data: callEnc}), types.HomesteadSigner{}, FaucetPriKey)
 
 	txmap := make(map[common.Address]types.Transactions)
 	txmap[FaucetAddress] = types.Transactions{callfaucettx}

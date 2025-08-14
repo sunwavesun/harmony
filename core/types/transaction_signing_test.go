@@ -29,12 +29,20 @@ func TestEIP155Signing(t *testing.T) {
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 
 	signer := NewEIP155Signer(big.NewInt(18))
-	tx, err := SignTx(NewTransaction(0, addr, 0, new(big.Int), 0, new(big.Int), nil), signer, key)
+	tx := NewTx(&LegacyTx{
+		Nonce:    0,
+		To:       &addr,
+		Value:    new(big.Int),
+		Gas:      0,
+		GasPrice: new(big.Int),
+		Data:     nil,
+	})
+	signedTx, err := SignTx(tx, signer, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	from, err := Sender(signer, tx)
+	from, err := Sender(signer, signedTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,50 +56,72 @@ func TestEIP155ChainID(t *testing.T) {
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 
 	signer := NewEIP155Signer(big.NewInt(18))
-	tx, err := SignTx(NewTransaction(0, addr, 0, new(big.Int), 0, new(big.Int), nil), signer, key)
+	tx := NewTx(&LegacyTx{
+		Nonce:    0,
+		To:       &addr,
+		Value:    new(big.Int),
+		Gas:      0,
+		GasPrice: new(big.Int),
+		Data:     nil,
+	})
+	signedTx, err := SignTx(tx, signer, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !tx.Protected() {
+	if !signedTx.Protected() {
 		t.Fatal("expected tx to be protected")
 	}
 
-	if tx.ChainID().Cmp(signer.chainID) != 0 {
-		t.Error("expected chainID to be", signer.chainID, "got", tx.ChainID())
+	if signedTx.ChainId().Cmp(signer.chainID) != 0 {
+		t.Error("expected chainID to be", signer.chainID, "got", signedTx.ChainId())
 	}
 
-	tx = NewTransaction(0, addr, 0, new(big.Int), 0, new(big.Int), nil)
-	tx, err = SignTx(tx, HomesteadSigner{}, key)
+	tx = NewTx(&LegacyTx{
+		Nonce:    0,
+		To:       &addr,
+		Value:    new(big.Int),
+		Gas:      0,
+		GasPrice: new(big.Int),
+		Data:     nil,
+	})
+	signedTx, err = SignTx(tx, HomesteadSigner{}, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if tx.Protected() {
+	if signedTx.Protected() {
 		t.Error("didn't expect tx to be protected")
 	}
 
-	if tx.ChainID().Sign() != 0 {
-		t.Error("expected chain id to be 0 got", tx.ChainID())
+	if signedTx.ChainId().Sign() != 0 {
+		t.Error("expected chain id to be 0 got", signedTx.ChainId())
 	}
 }
 
 func TestChainID(t *testing.T) {
 	key, _ := defaultTestKey()
 
-	tx := NewTransaction(0, common.Address{}, 0, new(big.Int), 0, new(big.Int), nil)
+	tx := NewTx(&LegacyTx{
+		Nonce:    0,
+		To:       &common.Address{},
+		Value:    new(big.Int),
+		Gas:      0,
+		GasPrice: new(big.Int),
+		Data:     nil,
+	})
 
 	var err error
-	tx, err = SignTx(tx, NewEIP155Signer(big.NewInt(1)), key)
+	signedTx, err := SignTx(tx, NewEIP155Signer(big.NewInt(1)), key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = Sender(NewEIP155Signer(big.NewInt(2)), tx)
+	_, err = Sender(NewEIP155Signer(big.NewInt(2)), signedTx)
 	if err != ErrInvalidChainID {
 		t.Error("expected error:", ErrInvalidChainID)
 	}
 
-	_, err = Sender(NewEIP155Signer(big.NewInt(1)), tx)
+	_, err = Sender(NewEIP155Signer(big.NewInt(1)), signedTx)
 	if err != nil {
 		t.Error("expected no error")
 	}

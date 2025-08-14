@@ -251,9 +251,9 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	shardID := uint32(0)
 
 	if contract == nil {
-		rawTx = types.NewContractCreation(nonce, shardID, value, gasLimit, gasPrice, input) //FIXME: hardcoded shardID 0
+		rawTx = types.NewTx(&types.LegacyTx{Nonce: nonce, Value: value, Gas: gasLimit, GasPrice: gasPrice, Data: input})
 	} else {
-		rawTx = types.NewTransaction(nonce, c.address, shardID, value, gasLimit, gasPrice, input) //FIXME: hardcoded shardID 0
+		rawTx = types.NewTx(&types.LegacyTx{Nonce: nonce, To: &c.address, Value: value, Gas: gasLimit, GasPrice: gasPrice, Data: input})
 	}
 	if opts.Signer == nil {
 		return nil, errors.New("no signer to authorize the transaction with")

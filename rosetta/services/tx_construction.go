@@ -425,7 +425,12 @@ func constructPlainTransaction(
 			})
 		}
 	}
-	return hmyTypes.NewTransaction(
-		metadata.Nonce, to, sourceShardID, components.Amount, metadata.GasLimit, metadata.GasPrice, data,
-	), nil
+	return hmyTypes.NewTx(&hmyTypes.LegacyTx{
+		Nonce:    metadata.Nonce,
+		To:       &to,
+		Value:    components.Amount,
+		Gas:      metadata.GasLimit,
+		GasPrice: metadata.GasPrice,
+		Data:     data,
+	}), nil
 }

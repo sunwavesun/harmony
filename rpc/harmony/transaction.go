@@ -237,12 +237,12 @@ func (s *PublicTransactionService) newRPCTransaction(tx *types.Transaction, bloc
 		return NewStructuredResponse(tx)
 	case Eth:
 		// calculate SenderAddress before ConvertToEth
-		senderAddr, err := tx.SenderAddress()
+		senderAddr, err := types.Sender(types.NewEIP155Signer(tx.ChainId()), tx)
 		if err != nil {
 			DoMetricRPCQueryInfo(GetTransactionByHash, FailedNumber)
 			return nil, err
 		}
-		tx, err := eth.NewTransaction(senderAddr, tx.ConvertToEth(), blockHash, blockNumber, timestamp, index)
+		tx, err := eth.NewTransaction(senderAddr, tx, blockHash, blockNumber, timestamp, index)
 		if err != nil {
 			DoMetricRPCQueryInfo(GetTransactionByHash, FailedNumber)
 			return nil, err
@@ -770,11 +770,11 @@ func (s *PublicTransactionService) GetTransactionReceipt(
 	case Eth:
 		if tx != nil {
 			// calculate SenderAddress before ConvertToEth
-			senderAddr, err := tx.SenderAddress()
+			senderAddr, err := types.Sender(types.NewEIP155Signer(tx.ChainId()), tx)
 			if err != nil {
 				return nil, err
 			}
-			RPCReceipt, err = eth.NewReceipt(senderAddr, tx.ConvertToEth(), blockHash, blockNumber, index, receipt)
+			RPCReceipt, err = eth.NewReceipt(senderAddr, tx, blockHash, blockNumber, index, receipt)
 		}
 		if err != nil {
 			return nil, err

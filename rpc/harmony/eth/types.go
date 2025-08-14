@@ -74,14 +74,14 @@ type Transaction struct {
 // representation, with the given location metadata set (if available).
 // Note that all txs on Harmony are replay protected (post EIP155 epoch).
 func NewTransaction(
-	from common.Address, tx *types.EthTransaction, blockHash common.Hash,
+	from common.Address, tx *types.Transaction, blockHash common.Hash,
 	blockNumber uint64, timestamp uint64, index uint64,
 ) (*Transaction, error) {
 	v, r, s := tx.RawSignatureValues()
 
 	result := &Transaction{
 		From:      from,
-		Gas:       hexutil.Uint64(tx.GasLimit()),
+		Gas:       hexutil.Uint64(tx.Gas()),
 		GasPrice:  (*hexutil.Big)(tx.GasPrice()),
 		Hash:      tx.Hash(),
 		Input:     hexutil.Bytes(tx.Data()),
@@ -133,11 +133,11 @@ func NewTransactionFromTransaction(
 }
 
 // NewReceipt returns the RPC data for a new receipt
-func NewReceipt(senderAddr common.Address, tx *types.EthTransaction, blockHash common.Hash, blockNumber, blockIndex uint64, receipt *types.Receipt) (map[string]interface{}, error) {
-	ethTxHash := tx.Hash()
+func NewReceipt(senderAddr common.Address, tx *types.Transaction, blockHash common.Hash, blockNumber, blockIndex uint64, receipt *types.Receipt) (map[string]interface{}, error) {
+	txHash := tx.Hash()
 	for i := range receipt.Logs {
 		// Override log txHash with receipt's
-		receipt.Logs[i].TxHash = ethTxHash
+		receipt.Logs[i].TxHash = txHash
 	}
 
 	var effectiveGasPrice hexutil.Big = hexutil.Big(*big.NewInt(types.DefaultEffectiveGasPrice))
@@ -151,7 +151,7 @@ func NewReceipt(senderAddr common.Address, tx *types.EthTransaction, blockHash c
 	fields := map[string]interface{}{
 		"blockHash":         blockHash,
 		"blockNumber":       hexutil.Uint64(blockNumber),
-		"transactionHash":   ethTxHash,
+		"transactionHash":   txHash,
 		"transactionIndex":  hexutil.Uint64(blockIndex),
 		"from":              senderAddr,
 		"to":                tx.To(),
@@ -221,7 +221,7 @@ func blockWithTxHashFromBlock(b *types.Block) *BlockWithTxHash {
 	}
 
 	for _, tx := range b.Transactions() {
-		blkWithTxs.Transactions = append(blkWithTxs.Transactions, tx.ConvertToEth().Hash())
+		blkWithTxs.Transactions = append(blkWithTxs.Transactions, tx.Hash())
 	}
 	return blkWithTxs
 }
@@ -238,7 +238,7 @@ func blockWithFullTxFromBlock(b *types.Block) (*BlockWithFullTx, error) {
 		if err != nil {
 			return nil, err
 		}
-		fmtTx, err := NewTransaction(from, tx.ConvertToEth(), b.Hash(), b.NumberU64(), b.Time().Uint64(), uint64(idx))
+		fmtTx, err := NewTransaction(from, tx, b.Hash(), b.NumberU64(), b.Time().Uint64(), uint64(idx))
 		if err != nil {
 			return nil, err
 		}
@@ -255,7 +255,7 @@ func NewTransactionFromBlockIndex(b *types.Block, index uint64) (*Transaction, e
 			"tx index %v greater than or equal to number of transactions on block %v", index, b.Hash().String(),
 		)
 	}
-	tx := txs[index].ConvertToEth()
+	tx := txs[index]
 	from, err := tx.SenderAddress()
 	if err != nil {
 		return nil, err

@@ -271,41 +271,15 @@ func getTransactionType(
 // for the transaction, gas used and an error if the transaction failed,
 // indicating the block was invalid.
 func ApplyTransaction(bc ChainContext, author *common.Address, gp *GasPool, statedb *state.DB, header *block.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, *types.CXReceipt, []staking.StakeMsg, uint64, error) {
-	config := bc.Config()
-	txType := getTransactionType(bc.Config(), header, tx)
-	if txType == types.InvalidTx {
-		return nil, nil, nil, 0, errors.New("Invalid Transaction Type")
-	}
-
-	if txType != types.SameShardTx && !config.AcceptsCrossTx(header.Epoch()) {
-		return nil, nil, nil, 0, errors.Errorf(
-			"cannot handle cross-shard transaction until after epoch %v (now %v)",
-			config.CrossTxEpoch, header.Epoch(),
-		)
-	}
-
-	var signer types.Signer
-	if tx.IsEthCompatible() {
-		if !config.IsEthCompatible(header.Epoch()) {
-			return nil, nil, nil, 0, errors.New("ethereum compatible transactions not supported at current epoch")
-		}
-		signer = types.NewEIP155Signer(config.EthCompatibleChainID)
-	} else {
-		signer = types.MakeSigner(config, header.Epoch())
-	}
-	msg, err := tx.AsMessage(signer)
-
-	// skip signer err for additiononly tx
+	msg, err := tx.AsMessage(types.MakeSigner(bc.Config(), header.Epoch()))
 	if err != nil {
 		return nil, nil, nil, 0, err
 	}
-
 	// Create a new context to be used in the EVM environment
 	context := NewEVMContext(msg, header, bc, author)
-	context.TxType = txType
 	// Create a new environment which holds all relevant information
 	// about the transaction and calling mechanisms.
-	vmenv := vm.NewEVM(context, statedb, config, cfg)
+	vmenv := vm.NewEVM(context, statedb, bc.Config(), cfg)
 	// Apply the transaction to the current state (included in the env)
 	result, err := ApplyMessage(vmenv, msg, gp)
 	if err != nil {
@@ -321,17 +295,16 @@ func ApplyTransaction(bc ChainContext, author *common.Address, gp *GasPool, stat
 	}
 	// Update the state with pending changes
 	var root []byte
-	if config.IsS3(header.Epoch()) {
+	if bc.Config().IsS3(header.Epoch()) {
 		statedb.Finalise(true)
 	} else {
-		root = statedb.IntermediateRoot(config.IsS3(header.Epoch())).Bytes()
+		root = statedb.IntermediateRoot(bc.Config().IsS3(header.Epoch())).Bytes()
 	}
 	*usedGas += result.UsedGas
 
-	failedExe := result.VMErr != nil
 	// Create a new receipt for the transaction, storing the intermediate root and gas used by the tx
 	// based on the eip phase, we're passing whether the root touch-delete accounts.
-	receipt := types.NewReceipt(root, failedExe, *usedGas)
+	receipt := types.NewReceipt(root, result.VMErr != nil, *usedGas)
 	receipt.TxHash = tx.Hash()
 	receipt.GasUsed = result.UsedGas
 	receipt.EffectiveGasPrice = tx.EffectiveGasPrice(big.NewInt(0), nil)
@@ -341,14 +314,14 @@ func ApplyTransaction(bc ChainContext, author *common.Address, gp *GasPool, stat
 	}
 
 	// Set the receipt logs and create a bloom for filtering
-	if config.IsReceiptLog(header.Epoch()) {
+	if bc.Config().IsReceiptLog(header.Epoch()) {
 		receipt.Logs = statedb.GetLogs(tx.Hash(), header.Number().Uint64(), header.Hash())
 	}
 	receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
 
 	var cxReceipt *types.CXReceipt
 	// Do not create cxReceipt if EVM call failed
-	if txType == types.SubtractionOnly && !failedExe {
+	if tx.ShardID() != tx.ToShardID() && result.VMErr == nil {
 		if vmenv.CXReceipt != nil {
 			return nil, nil, nil, 0, errors.New("cannot have cross shard receipt via precompile and directly")
 		}
@@ -361,14 +334,14 @@ func ApplyTransaction(bc ChainContext, author *common.Address, gp *GasPool, stat
 			Amount:    msg.Value(),
 		}
 	} else {
-		if !failedExe {
+		if result.VMErr == nil {
 			if vmenv.CXReceipt != nil {
 				cxReceipt = vmenv.CXReceipt
 				// this tx.Hash needs to be the "original" tx.Hash
 				// since, in effect, we have added
 				// support for cross shard txs
 				// to eth txs
-				cxReceipt.TxHash = tx.HashByType()
+				cxReceipt.TxHash = tx.Hash()
 			}
 		} else {
 			cxReceipt = nil

@@ -35,7 +35,7 @@ func createDelegate() (*StakingTransaction, error) {
 	return NewStakingTransaction(0, 21000, gasPrice, stakePayloadMaker)
 }
 
-func CreateTestNewTransaction() (*StakingTransaction, error) {
+func TestNewStakingTransaction(t *testing.T) {
 	dAddr, _ := common2.Bech32ToAddress(testAccount)
 
 	stakePayloadMaker := func() (Directive, interface{}) {
@@ -73,7 +73,7 @@ func CreateTestNewTransaction() (*StakingTransaction, error) {
 }
 
 func TestTransactionCopy(t *testing.T) {
-	tx1, err := CreateTestNewTransaction()
+	tx1, err := TestNewStakingTransaction()
 	if err != nil {
 		t.Errorf("cannot create new staking transaction, %v\n", err)
 	}
@@ -115,7 +115,7 @@ func TestTransactionCopy(t *testing.T) {
 }
 
 func TestHash(t *testing.T) {
-	stakingTx, err := CreateTestNewTransaction()
+	stakingTx, err := TestNewStakingTransaction()
 	if err != nil {
 		t.Errorf("cannot create new staking transaction, %v\n", err)
 	}
@@ -129,7 +129,7 @@ func TestHash(t *testing.T) {
 }
 
 func TestGasCost(t *testing.T) {
-	stakingTx, err := CreateTestNewTransaction()
+	stakingTx, err := TestNewStakingTransaction()
 	if err != nil {
 		t.Errorf("cannot create validator staking transaction, %v\n", err)
 	}
@@ -160,7 +160,7 @@ func TestGasCost(t *testing.T) {
 }
 
 func TestNonce(t *testing.T) {
-	stakingTx, err := CreateTestNewTransaction()
+	stakingTx, err := TestNewStakingTransaction()
 	if err != nil {
 		t.Errorf("cannot create validator staking transaction, %v\n", err)
 	}
@@ -170,7 +170,7 @@ func TestNonce(t *testing.T) {
 }
 
 func TestData(t *testing.T) {
-	stakingTx, err := CreateTestNewTransaction()
+	stakingTx, err := TestNewStakingTransaction()
 	if err != nil {
 		t.Errorf("cannot create validator staking transaction, %v\n", err)
 	}

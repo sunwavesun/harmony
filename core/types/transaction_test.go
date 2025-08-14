@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/harmony-one/harmony/internal/params"
 )
@@ -50,8 +51,15 @@ func TestTransactionPriceNonceSort(t *testing.T) {
 	for start, key := range keys {
 		addr := crypto.PubkeyToAddress(key.PublicKey)
 		for i := 0; i < 25; i++ {
-			tx, _ := SignTx(NewTransaction(uint64(start+i), common.Address{}, 0, big.NewInt(100), 100, big.NewInt(int64(start+i)), nil), signer, key)
-			groups[addr] = append(groups[addr], tx)
+			tx := types.NewTx(&types.LegacyTx{
+				Nonce:    uint64(start + i),
+				To:       &common.Address{},
+				Value:    big.NewInt(100),
+				Gas:      100,
+				GasPrice: big.NewInt(int64(start + i)),
+			})
+			signedTx, _ := SignTx(tx, signer, key)
+			groups[addr] = append(groups[addr], signedTx)
 		}
 	}
 	// Sort the transactions and cross check the nonce ordering
@@ -101,9 +109,9 @@ func TestTransactionJSON(t *testing.T) {
 		var tx *Transaction
 		switch i % 2 {
 		case 0:
-			tx = NewTransaction(i, common.Address{1}, 0, common.Big0, 1, common.Big2, []byte("abcdef"))
+			tx = NewTx(&LegacyTx{Nonce: i, To: &common.Address{1}, Value: common.Big0, Gas: 1, GasPrice: common.Big2, Data: []byte("abcdef")})
 		case 1:
-			tx = NewContractCreation(i, 0, common.Big0, 1, common.Big2, []byte("abcdef"))
+			tx = NewTx(&LegacyTx{Nonce: i, Value: common.Big0, Gas: 1, GasPrice: common.Big2, Data: []byte("abcdef")})
 		}
 		transactions = append(transactions, tx)
 
@@ -151,10 +159,17 @@ func TestTransactionTimeSort(t *testing.T) {
 	for start, key := range keys {
 		addr := crypto.PubkeyToAddress(key.PublicKey)
 
-		tx, _ := SignTx(NewTransaction(0, common.Address{}, 0, big.NewInt(100), 100, big.NewInt(1), nil), signer, key)
-		tx.time = time.Unix(0, int64(len(keys)-start))
+		tx := NewTx(&LegacyTx{
+			Nonce:    0,
+			To:       &common.Address{},
+			Value:    big.NewInt(100),
+			Gas:      100,
+			GasPrice: big.NewInt(1),
+		})
+		signedTx, _ := SignTx(tx, signer, key)
+		signedTx.time = time.Unix(0, int64(len(keys)-start))
 
-		groups[addr] = append(groups[addr], tx)
+		groups[addr] = append(groups[addr], signedTx)
 	}
 	// Sort the transactions and cross check the nonce ordering
 	config := params.TestChainConfig

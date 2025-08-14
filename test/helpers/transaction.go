@@ -48,9 +48,14 @@ func CreateTestTransaction(
 			nonce, &toAddr, fromShard, toShard, amount, gasLimit, gasPrice, data,
 		)
 	} else {
-		tx = hmytypes.NewTransaction(
-			nonce, toAddr, fromShard, amount, gasLimit, gasPrice, data,
-		)
+		tx = hmytypes.NewTx(&hmytypes.LegacyTx{
+			Nonce:    nonce,
+			To:       &toAddr,
+			Value:    amount,
+			Gas:      gasLimit,
+			GasPrice: gasPrice,
+			Data:     data,
+		})
 	}
 	return hmytypes.SignTx(tx, signer, fromKey)
 }

@@ -83,20 +83,11 @@ func (s *PublicPoolService) SendRawTransaction(
 	var tx *types.Transaction
 	var txHash common.Hash
 
-	if s.version == Eth {
-		ethTx := new(types.EthTransaction)
-		if err := rlp.DecodeBytes(encodedTx, ethTx); err != nil {
-			return common.Hash{}, err
-		}
-		txHash = ethTx.Hash()
-		tx = ethTx.ConvertToHmy()
-	} else {
-		tx = new(types.Transaction)
-		if err := rlp.DecodeBytes(encodedTx, tx); err != nil {
-			return common.Hash{}, err
-		}
-		txHash = tx.Hash()
+	tx = new(types.Transaction)
+	if err := rlp.DecodeBytes(encodedTx, tx); err != nil {
+		return common.Hash{}, err
 	}
+	txHash = tx.Hash()
 
 	// Verify chainID
 	if err := s.verifyChainID(tx); err != nil {
@@ -253,14 +244,14 @@ func (s *PublicPoolService) PendingTransactions(
 					continue // Legacy behavior is to not return error here
 				}
 			case Eth:
-				from, err := plainTx.SenderAddress()
+				from, err := types.Sender(types.NewEIP155Signer(plainTx.ChainId()), plainTx)
 				if err != nil {
 					utils.Logger().Debug().
 						Err(err).
 						Msgf("%v error at %v", LogTag, "PendingTransactions")
 					continue // Legacy behavior is to not return error here
 				}
-				tx, err = eth.NewTransaction(from, plainTx.ConvertToEth(), common.Hash{}, 0, 0, 0)
+				tx, err = eth.NewTransaction(from, plainTx, common.Hash{}, 0, 0, 0)
 				if err != nil {
 					utils.Logger().Debug().
 						Err(err).
